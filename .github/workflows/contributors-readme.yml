@@ -1,0 +1,32 @@
+name: Sync README Contributors
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  sync-contributors:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update README contributors section
+        uses: akhilmhdh/contributors-readme-action@v2.3.11
+        with:
+          readme_path: README.md
+          use_username: true
+          columns_per_row: 6
+          image_size: 100
+          committer_username: github-actions[bot]
+          committer_email: github-actions[bot]@users.noreply.github.com
+          commit_message: "docs(contributors): update README [skip ci]"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

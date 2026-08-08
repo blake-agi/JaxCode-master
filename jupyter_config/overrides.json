@@ -1,0 +1,55 @@
+{
+  "@jupyterlab/apputils-extension:themes": {
+    "theme": "JupyterLab Light"
+  },
+  "@jupyterlab/apputils-extension:notification": {
+    "fetchNews": "false",
+    "checkForUpdates": false
+  },
+  "@jupyterlab/application-extension:shell": {
+    "mode": "single-document"
+  },
+  "@jupyterlab/application-extension:sidebar": {
+    "collapsed": false
+  },
+  "@jupyterlab/notebook-extension:tracker": {
+    "codeCellConfig": {
+      "autoClosingBrackets": true,
+      "fontFamily": "JetBrains Mono, Fira Code, Cascadia Code, monospace",
+      "fontSize": 14,
+      "lineHeight": 1.6,
+      "lineNumbers": true,
+      "matchBrackets": true,
+      "wordWrap": "on"
+    },
+    "markdownCellConfig": {
+      "autoClosingBrackets": true,
+      "fontFamily": "JetBrains Mono, Fira Code, monospace",
+      "fontSize": 14,
+      "lineHeight": 1.6,
+      "matchBrackets": true,
+      "wordWrap": "on"
+    },
+    "recordTiming": true
+  },
+  "@jupyterlab/terminal-extension:plugin": {
+    "fontFamily": "JetBrains Mono, Fira Code, monospace",
+    "fontSize": 14
+  },
+  "@jupyterlab/fileeditor-extension:plugin": {
+    "editorConfig": {
+      "fontFamily": "JetBrains Mono, Fira Code, monospace",
+      "fontSize": 14,
+      "lineHeight": 1.6,
+      "lineNumbers": true,
+      "wordWrap": "on"
+    }
+  },
+  "@jupyterlab/codemirror-extension:plugin": {
+    "defaultConfig": {
+      "fontFamily": "JetBrains Mono, Fira Code, monospace",
+      "fontSize": 14,
+      "lineHeight": 1.6
+    }
+  }
+}

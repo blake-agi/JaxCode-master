@@ -1,0 +1,14 @@
+services:
+  torchcode:
+    image: ghcr.io/duoan/torchcode:latest
+    build: .
+    user: root
+    ports:
+      - "8888:8888"
+    environment:
+      - PORT=8888
+    volumes:
+      - ./notebooks:/app/notebooks
+      - ./torch_judge:/app/torch_judge
+      - ./data:/app/data
+    restart: unless-stopped
