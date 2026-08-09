@@ -140,7 +140,7 @@ reporting a diff.
 ## 📚 Problems
 
 <!-- PROBLEMS:START -->
-**27 problems** — 🟢 12 Easy · 🟡 13 Medium · 🔴 2 Hard
+**52 problems** — 🟢 15 Easy · 🟡 25 Medium · 🔴 12 Hard
 
 
 ### JAX Fundamentals (11)
@@ -159,7 +159,7 @@ reporting a diff.
 | 10 | [Gradient Checkpointing with jax.checkpoint](templates/10_remat_checkpoint.ipynb) | 🟡 Medium | `remat_checkpoint` |
 | 11 | [Data-Parallel Mean with shard_map](templates/11_sharding_basics.ipynb) | 🔴 Hard | `sharding_basics` |
 
-### Core Ops & Layers (11)
+### Core Ops & Layers (12)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -174,21 +174,56 @@ reporting a diff.
 | 20 | [Embedding Lookup (nnx.Module)](templates/20_embedding.ipynb) | 🟢 Easy | `embedding` |
 | 21 | [Two-Layer MLP (nnx.Module)](templates/21_mlp.ipynb) | 🟢 Easy | `mlp` |
 | 22 | [Xavier and He Initialisation](templates/22_weight_init.ipynb) | 🟡 Medium | `weight_init` |
+| 23 | [Conv2D from Scratch (NHWC)](templates/23_conv2d.ipynb) | 🔴 Hard | `conv2d` |
 
-### Attention & Transformers (3)
-
-| # | Problem | Difficulty | `task_id` |
-|---|---|---|---|
-| 23 | [Scaled Dot-Product Attention](templates/23_attention.ipynb) | 🟡 Medium | `attention` |
-| 24 | [Multi-Head Attention (nnx.Module)](templates/24_mha.ipynb) | 🟡 Medium | `mha` |
-| 25 | [Rotary Position Embeddings (RoPE)](templates/25_rope.ipynb) | 🟡 Medium | `rope` |
-
-### Training (2)
+### Attention & Transformers (14)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
-| 26 | [Global-Norm Gradient Clipping](templates/26_gradient_clipping.ipynb) | 🟡 Medium | `gradient_clipping` |
-| 27 | [Gradient Accumulation](templates/27_gradient_accumulation.ipynb) | 🟡 Medium | `gradient_accumulation` |
+| 24 | [Scaled Dot-Product Attention](templates/24_attention.ipynb) | 🟡 Medium | `attention` |
+| 25 | [Multi-Head Attention (nnx.Module)](templates/25_mha.ipynb) | 🟡 Medium | `mha` |
+| 26 | [Causal Self-Attention](templates/26_causal_attention.ipynb) | 🟡 Medium | `causal_attention` |
+| 27 | [Multi-Head Cross-Attention](templates/27_cross_attention.ipynb) | 🟡 Medium | `cross_attention` |
+| 28 | [Grouped-Query Attention](templates/28_gqa.ipynb) | 🟡 Medium | `gqa` |
+| 29 | [Sliding-Window Attention](templates/29_sliding_window.ipynb) | 🟡 Medium | `sliding_window` |
+| 30 | [Linear Attention (kernel feature map)](templates/30_linear_attention.ipynb) | 🔴 Hard | `linear_attention` |
+| 31 | [FlashAttention (tiled online softmax)](templates/31_flash_attention.ipynb) | 🔴 Hard | `flash_attention` |
+| 32 | [Rotary Position Embeddings (RoPE)](templates/32_rope.ipynb) | 🟡 Medium | `rope` |
+| 33 | [KV Cache for Incremental Decoding (nnx.Module)](templates/33_kv_cache.ipynb) | 🟡 Medium | `kv_cache` |
+| 34 | [GPT-2 Transformer Block](templates/34_gpt2_block.ipynb) | 🔴 Hard | `gpt2_block` |
+| 35 | [ViT Patch Embedding](templates/35_vit_patch.ipynb) | 🟡 Medium | `vit_patch` |
+| 36 | [Mixture of Experts (top-k routing)](templates/36_moe.ipynb) | 🔴 Hard | `moe` |
+| 37 | [LoRA (Low-Rank Adaptation)](templates/37_lora.ipynb) | 🟡 Medium | `lora` |
+
+### Training (6)
+
+| # | Problem | Difficulty | `task_id` |
+|---|---|---|---|
+| 38 | [Cross-Entropy Loss from Logits](templates/38_cross_entropy.ipynb) | 🟢 Easy | `cross_entropy` |
+| 39 | [Linear Regression: Closed Form vs Gradient Descent](templates/39_linear_regression.ipynb) | 🟢 Easy | `linear_regression` |
+| 40 | [Adam Optimizer](templates/40_adam.ipynb) | 🟡 Medium | `adam` |
+| 41 | [Cosine LR Schedule with Warmup](templates/41_cosine_lr.ipynb) | 🟢 Easy | `cosine_lr` |
+| 42 | [Global-Norm Gradient Clipping](templates/42_gradient_clipping.ipynb) | 🟡 Medium | `gradient_clipping` |
+| 43 | [Gradient Accumulation](templates/43_gradient_accumulation.ipynb) | 🟡 Medium | `gradient_accumulation` |
+
+### Inference & Decoding (5)
+
+| # | Problem | Difficulty | `task_id` |
+|---|---|---|---|
+| 44 | [Top-k / Top-p Sampling](templates/44_topk_sampling.ipynb) | 🟡 Medium | `topk_sampling` |
+| 45 | [Beam Search with Length Normalisation](templates/45_beam_search.ipynb) | 🔴 Hard | `beam_search` |
+| 46 | [Speculative Decoding (draft, verify, resample)](templates/46_speculative_decoding.ipynb) | 🔴 Hard | `speculative_decoding` |
+| 47 | [Byte-Pair Encoding (train and apply)](templates/47_bpe.ipynb) | 🟡 Medium | `bpe` |
+| 48 | [INT8 Quantization (symmetric and asymmetric)](templates/48_int8_quantization.ipynb) | 🟡 Medium | `int8_quantization` |
+
+### RLHF & Preference Losses (4)
+
+| # | Problem | Difficulty | `task_id` |
+|---|---|---|---|
+| 49 | [DPO (Direct Preference Optimization) Loss](templates/49_dpo_loss.ipynb) | 🟡 Medium | `dpo_loss` |
+| 50 | [GRPO (Group Relative Policy Optimization) Loss](templates/50_grpo_loss.ipynb) | 🔴 Hard | `grpo_loss` |
+| 51 | [PPO Clipped Surrogate Loss](templates/51_ppo_loss.ipynb) | 🔴 Hard | `ppo_loss` |
+| 52 | [OPD (On-Policy Distillation) Loss](templates/52_opd_loss.ipynb) | 🔴 Hard | `opd_loss` |
 <!-- PROBLEMS:END -->
 
 ---
