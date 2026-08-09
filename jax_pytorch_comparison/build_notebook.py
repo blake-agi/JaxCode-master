@@ -578,6 +578,65 @@ print("  ✅ both frameworks use inverted dropout")
 )
 
 section(
+    "BatchNorm divergence",
+    r"""
+## 12. ⚠️ Where the two frameworks genuinely disagree
+
+Almost everything above is a syntax difference. This one is a **semantic**
+difference, and it is the kind of thing that silently corrupts a ported model.
+
+Both frameworks **normalise** using the biased (population) variance. But they
+update the `running_var` buffer differently:
+
+| | `running_var` update uses |
+|---|---|
+| `flax.nnx.BatchNorm` | **biased** variance (`ddof=0`) |
+| `torch.nn.BatchNorm1d` | **unbiased** variance (`ddof=1`) |
+
+They differ by exactly the Bessel factor $n/(n-1)$ — 3.2% at batch size 32.
+
+Why it is nasty:
+- training outputs are **identical**, so nothing looks wrong while you train
+- the error appears only at **inference**, once the running buffers are used
+- it scales with $1/n$, so it is worst for small batches — exactly where people
+  debug
+
+If you port BatchNorm weights between frameworks, rescale `running_var` by
+$n/(n-1)$ (or its inverse). The cell below proves the divergence rather than
+asserting it.
+""",
+    """
+x_np = np.random.randn(32, 16).astype(np.float32)
+n = x_np.shape[0]
+
+biased = x_np.var(axis=0, ddof=0)
+unbiased = x_np.var(axis=0, ddof=1)
+
+# torch: momentum=0.1 means new = 0.9*old + 0.1*batch
+bn_t = nn.BatchNorm1d(16, eps=1e-5, momentum=0.1); bn_t.train()
+out_t = bn_t(torch.tensor(x_np))
+
+# flax: momentum=0.9 means the same thing (the conventions are complementary)
+bn_j = nnx.BatchNorm(16, momentum=0.9, epsilon=1e-5, rngs=nnx.Rngs(0))
+out_j = bn_j(jnp.asarray(x_np), use_running_average=False)
+
+agree(out_t, out_j, label="training output (both use BIASED variance)")
+
+rv_t = bn_t.running_var.detach().numpy()
+rv_j = np.asarray(bn_j.var[...])
+
+print(f"  torch running_var[0] = {rv_t[0]:.6f}")
+print(f"  flax  running_var[0] = {rv_j[0]:.6f}")
+print(f"  ratio                = {rv_t[0] / rv_j[0] if rv_j[0] else float('nan'):.6f}")
+
+assert np.allclose(rv_j, 0.9 + 0.1 * biased, atol=1e-5), "flax should use biased"
+assert np.allclose(rv_t, 0.9 + 0.1 * unbiased, atol=1e-5), "torch should use unbiased"
+print(f"  ⚠️  running_var DIFFERS by the Bessel factor n/(n-1) = {n/(n-1):.4f}")
+print("     -> identical in training, divergent at inference.")
+""",
+)
+
+section(
     "Cheat sheet",
     r"""
 ## 12. Translation cheat sheet
@@ -608,10 +667,12 @@ section(
 | custom backward | `autograd.Function` | `jax.custom_vjp` |
 | conv layout | NCHW / OIHW | NHWC / HWIO |
 
-### The three that actually cost people time
+### The four that actually cost people time
 1. **Weight transpose** on `Linear` — silent whenever `in == out`.
 2. **Key reuse** — same key, same "random" numbers, silently correlated noise.
 3. **Python loop under `jit`** — works, then compile time explodes at scale.
+4. **BatchNorm `running_var`** — biased in Flax, unbiased in torch; training
+   looks identical and only inference diverges (section 12).
 """,
     """
 print("Everything above ran and agreed. You now have the translation table for:")

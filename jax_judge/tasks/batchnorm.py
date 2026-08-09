@@ -56,6 +56,22 @@ Forgetting to switch to eval mode means inference normalises by whatever happens
 to be in the current batch, so predictions change depending on what else you
 batched alongside them — and with batch size 1 the variance is 0 and everything
 collapses.
+
+### ⚠️ Flax and PyTorch genuinely disagree here
+Both frameworks **normalise** with the biased (population) variance. But they
+update the running buffer differently:
+
+| | `running_var` update uses |
+|---|---|
+| `flax.nnx.BatchNorm` | **biased** variance (`ddof=0`) |
+| `torch.nn.BatchNorm1d` | **unbiased** variance (`ddof=1`) |
+
+They differ by exactly the Bessel factor $n/(n-1)$ — 3.2% at batch size 32, and
+it only shows up at **inference**, after the weights look fine in training.
+This task follows the Flax convention. If you ever port BatchNorm weights
+between the two frameworks, rescale `running_var` or your eval-mode outputs will
+be quietly wrong. (Verified empirically — see
+`jax_pytorch_comparison/crosscheck_vs_torch.py`.)
 """,
     "stub": '''import jax
 import jax.numpy as jnp
