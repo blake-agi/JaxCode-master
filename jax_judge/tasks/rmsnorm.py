@@ -123,7 +123,7 @@ assert not hasattr(rn, "bias") or rn.bias is None, (
     'from LayerNorm'
 )
 assert isinstance(rn.scale, nnx.Param), f'scale must be nnx.Param, got {type(rn.scale)}'
-assert jnp.allclose(rn.scale.value, 1.0), 'scale must be initialised to ones'
+assert jnp.allclose(rn.scale[...], 1.0), 'scale must be initialised to ones'
 
 # An all-positive input keeps a positive mean: re-centering would zero it.
 x = jnp.array([[1.0, 2.0, 3.0, 4.0]])
@@ -145,12 +145,12 @@ rn = {fn}(4)
 x = jax.random.normal(jax.random.key(1), (3, 4))
 
 base = rn(x)
-rn.scale.value = jnp.full((4,), 3.0)
+rn.scale[...] = jnp.full((4,), 3.0)
 scaled = rn(x)
 
 assert jnp.allclose(scaled, base * 3.0, atol=1e-4), 'scale is not being applied'
 
-rn.scale.value = jnp.array([1.0, 2.0, 3.0, 4.0])
+rn.scale[...] = jnp.array([1.0, 2.0, 3.0, 4.0])
 per_channel = rn(x)
 assert jnp.allclose(per_channel, base * jnp.array([1.0, 2.0, 3.0, 4.0]), atol=1e-4), (
     'scale must broadcast per feature'

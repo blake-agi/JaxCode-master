@@ -139,9 +139,9 @@ class GroupedQueryAttention(nnx.Module):
     def __call__(self, x):
         B, T, _ = x.shape
 
-        q = self._split(x @ self.w_q.value, self.num_heads)      # (B, H,   T, Dh)
-        k = self._split(x @ self.w_k.value, self.num_kv_heads)   # (B, Hkv, T, Dh)
-        v = self._split(x @ self.w_v.value, self.num_kv_heads)   # (B, Hkv, T, Dh)
+        q = self._split(x @ self.w_q[...], self.num_heads)      # (B, H,   T, Dh)
+        k = self._split(x @ self.w_k[...], self.num_kv_heads)   # (B, Hkv, T, Dh)
+        v = self._split(x @ self.w_v[...], self.num_kv_heads)   # (B, Hkv, T, Dh)
 
         # Interleaved repeat: KV head g serves query heads [g*r, (g+1)*r).
         # jnp.repeat gives (0,0,1,1); jnp.tile would give (0,1,0,1) — wrong.
@@ -152,7 +152,7 @@ class GroupedQueryAttention(nnx.Module):
         out = jnp.einsum("bhts,bhsd->bhtd", jax.nn.softmax(scores, axis=-1), v)
 
         out = out.transpose(0, 2, 1, 3).reshape(B, T, self.d_model)
-        return out @ self.w_o.value
+        return out @ self.w_o[...]
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
@@ -237,12 +237,12 @@ out = m(x)
 def split(y, n):
     return y.reshape(B, T, n, Dh).transpose(0, 2, 1, 3)
 
-q = split(x @ m.w_q.value, H)
-k = jnp.repeat(split(x @ m.w_k.value, KV), r, axis=1)
-v = jnp.repeat(split(x @ m.w_v.value, KV), r, axis=1)
+q = split(x @ m.w_q[...], H)
+k = jnp.repeat(split(x @ m.w_k[...], KV), r, axis=1)
+v = jnp.repeat(split(x @ m.w_v[...], KV), r, axis=1)
 s = jnp.einsum('bhtd,bhsd->bhts', q, k) / jnp.sqrt(jnp.float32(Dh))
 o = jnp.einsum('bhts,bhsd->bhtd', jax.nn.softmax(s, axis=-1), v)
-ref = o.transpose(0, 2, 1, 3).reshape(B, T, D) @ m.w_o.value
+ref = o.transpose(0, 2, 1, 3).reshape(B, T, D) @ m.w_o[...]
 
 assert jnp.allclose(out, ref, atol=1e-5), (
     f'Max diff {float(jnp.abs(out - ref).max()):.2e}. Check the head split '
@@ -254,7 +254,7 @@ assert jnp.allclose(out, ref, atol=1e-5), (
 wrong = jnp.einsum('bhtd,bhsd->bhts', q, k) / jnp.sqrt(jnp.float32(D))
 wrong_ref = jnp.einsum(
     'bhts,bhsd->bhtd', jax.nn.softmax(wrong, axis=-1), v
-).transpose(0, 2, 1, 3).reshape(B, T, D) @ m.w_o.value
+).transpose(0, 2, 1, 3).reshape(B, T, D) @ m.w_o[...]
 assert not jnp.allclose(out, wrong_ref, atol=1e-5), 'Scores look scaled by 1/sqrt(d_model)'
 """,
         },
@@ -275,14 +275,14 @@ out = m(x)
 def split(y, n):
     return y.reshape(B, T, n, Dh).transpose(0, 2, 1, 3)
 
-q = split(x @ m.w_q.value, H)
-k0 = split(x @ m.w_k.value, KV)
-v0 = split(x @ m.w_v.value, KV)
+q = split(x @ m.w_q[...], H)
+k0 = split(x @ m.w_k[...], KV)
+v0 = split(x @ m.w_v[...], KV)
 
 def attend(k, v):
     s = jnp.einsum('bhtd,bhsd->bhts', q, k) / jnp.sqrt(jnp.float32(Dh))
     o = jnp.einsum('bhts,bhsd->bhtd', jax.nn.softmax(s, axis=-1), v)
-    return o.transpose(0, 2, 1, 3).reshape(B, T, D) @ m.w_o.value
+    return o.transpose(0, 2, 1, 3).reshape(B, T, D) @ m.w_o[...]
 
 interleaved = attend(jnp.repeat(k0, r, axis=1), jnp.repeat(v0, r, axis=1))   # 0,0,1,1
 tiled = attend(jnp.tile(k0, (1, r, 1, 1)), jnp.tile(v0, (1, r, 1, 1)))       # 0,1,0,1
@@ -318,7 +318,7 @@ assert jnp.isfinite(out).all(), 'Non-finite MQA output'
 # Softmax rows sum to 1, so identical value vectors must pass straight through
 # (before w_o): feed x whose V rows are all equal by zeroing w_v and using bias-free
 # projections -> the attention output is exactly 0 regardless of the scores.
-mqa.w_v.value = jnp.zeros_like(mqa.w_v.value)
+mqa.w_v[...] = jnp.zeros_like(mqa.w_v[...])
 assert jnp.allclose(mqa(x), 0.0, atol=1e-6), (
     'With w_v = 0 every value vector is 0, so the output must be 0 — '
     'a non-zero result means a bias is being added somewhere'

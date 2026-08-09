@@ -196,12 +196,12 @@ def split(y):
     return y.reshape(B, T, H, dh).transpose(0, 2, 1, 3)
 
 
-q = split(x @ m.w_q.value)
-k = split(x @ m.w_k.value)
-v = split(x @ m.w_v.value)
+q = split(x @ m.w_q[...])
+k = split(x @ m.w_k[...])
+v = split(x @ m.w_v[...])
 scores = (q @ jnp.swapaxes(k, -1, -2)) / jnp.sqrt(float(dh))
 attn = jax.nn.softmax(scores, axis=-1) @ v
-ref = attn.transpose(0, 2, 1, 3).reshape(B, T, D) @ m.w_o.value
+ref = attn.transpose(0, 2, 1, 3).reshape(B, T, D) @ m.w_o[...]
 
 assert jnp.allclose(out, ref, atol=1e-5), (
     'Output does not match the reference. Check three things: heads are split '
@@ -211,7 +211,7 @@ assert jnp.allclose(out, ref, atol=1e-5), (
 
 # sqrt(d_model) instead of sqrt(d_head) is the classic near-miss.
 wrong = jax.nn.softmax(scores * jnp.sqrt(float(dh)) / jnp.sqrt(float(D)), axis=-1) @ v
-wrong = wrong.transpose(0, 2, 1, 3).reshape(B, T, D) @ m.w_o.value
+wrong = wrong.transpose(0, 2, 1, 3).reshape(B, T, D) @ m.w_o[...]
 assert not jnp.allclose(out, wrong, atol=1e-6), 'You are scaling by sqrt(d_model)'
 """,
         },
@@ -229,10 +229,10 @@ m = {fn}(d_model=D, num_heads=H, rngs=nnx.Rngs(params=0))
 # Make every projection the identity so the module reduces to pure attention
 # on x itself, and w_o is the identity too.
 eye = jnp.eye(D)
-m.w_q.value = eye
-m.w_k.value = eye
-m.w_v.value = eye
-m.w_o.value = eye
+m.w_q[...] = eye
+m.w_k[...] = eye
+m.w_v[...] = eye
+m.w_o[...] = eye
 
 x = jax.random.normal(jax.random.key(0), (B, T, D))
 out = m(x)
@@ -276,11 +276,11 @@ assert counts[1] == 4 * 32 * 32, (
 # H=1 must reduce to plain single-head attention on the full d_model.
 m1 = {fn}(d_model=16, num_heads=1, rngs=nnx.Rngs(params=1))
 x = jax.random.normal(jax.random.key(0), (1, 4, 16))
-q = x @ m1.w_q.value
-k = x @ m1.w_k.value
-v = x @ m1.w_v.value
+q = x @ m1.w_q[...]
+k = x @ m1.w_k[...]
+v = x @ m1.w_v[...]
 s = (q @ jnp.swapaxes(k, -1, -2)) / jnp.sqrt(16.0)
-ref = (jax.nn.softmax(s, axis=-1) @ v) @ m1.w_o.value
+ref = (jax.nn.softmax(s, axis=-1) @ v) @ m1.w_o[...]
 assert jnp.allclose(m1(x), ref, atol=1e-5), 'num_heads=1 must be plain attention'
 """,
         },

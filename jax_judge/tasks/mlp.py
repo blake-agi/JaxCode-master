@@ -155,8 +155,8 @@ total = sum(int(l.size) for l in leaves)
 expected = 16 * 64 + 64 + 64 * 16 + 16
 assert total == expected, f'Param count {total} vs {expected} (= 8*d^2 + biases)'
 
-assert jnp.allclose(m.b1.value, 0.0), 'b1 must be initialised to zeros'
-assert jnp.allclose(m.b2.value, 0.0), 'b2 must be initialised to zeros'
+assert jnp.allclose(m.b1[...], 0.0), 'b1 must be initialised to zeros'
+assert jnp.allclose(m.b2[...], 0.0), 'b2 must be initialised to zeros'
 """,
         },
         {
@@ -170,9 +170,9 @@ m = {fn}(16, 16, hidden=32, rngs=nnx.Rngs(params=0))
 x = jax.random.normal(jax.random.key(0), (2, 4, 16))
 out = m(x)
 
-h = x @ m.w1.value + m.b1.value
+h = x @ m.w1[...] + m.b1[...]
 ref_exact = 0.5 * h * (1 + jax.scipy.special.erf(h / jnp.sqrt(2.0)))
-expected = ref_exact @ m.w2.value + m.b2.value
+expected = ref_exact @ m.w2[...] + m.b2[...]
 
 assert out.shape == (2, 4, 16), f'Output shape {out.shape} vs (2, 4, 16)'
 # atol is loose enough for either GELU form (exact erf or tanh approximation).
@@ -181,7 +181,7 @@ assert jnp.allclose(out, expected, atol=5e-3), (
 )
 
 # Biases must actually be used.
-m.b2.value = m.b2.value + 100.0
+m.b2[...] = m.b2[...] + 100.0
 assert jnp.allclose(m(x) - out, 100.0, atol=1e-3), 'b2 is not being added'
 """,
         },
@@ -193,8 +193,8 @@ from flax import nnx
 
 m = {fn}(3, 3, hidden=3, rngs=nnx.Rngs(params=0))
 # Make both matrices the identity so the module computes exactly gelu(x).
-m.w1.value = jnp.eye(3)
-m.w2.value = jnp.eye(3)
+m.w1[...] = jnp.eye(3)
+m.w2[...] = jnp.eye(3)
 
 x = jnp.array([[-1.0, 0.0, 2.0]])
 out = m(x)
@@ -227,7 +227,7 @@ for shape in [(8,), (3, 8), (2, 5, 8), (2, 3, 4, 8)]:
     )
 
 big = {fn}(256, 256, rngs=nnx.Rngs(params=0))
-s1, s2 = float(jnp.std(big.w1.value)), float(jnp.std(big.w2.value))
+s1, s2 = float(jnp.std(big.w1[...])), float(jnp.std(big.w2[...]))
 e1, e2 = 1.0 / 16.0, 1.0 / jnp.sqrt(1024.0)   # 1/sqrt(din), 1/sqrt(hidden)
 assert abs(s1 - e1) < 0.3 * e1, f'w1 std {s1:.5f}, expected ~{e1:.5f} (normal / sqrt(din))'
 assert abs(s2 - e2) < 0.3 * e2, (
@@ -236,7 +236,7 @@ assert abs(s2 - e2) < 0.3 * e2, (
 
 # Same-shaped matrices drawn from the same key would be identical.
 sq = {fn}(64, 64, hidden=64, rngs=nnx.Rngs(params=0))
-assert not jnp.allclose(sq.w1.value, sq.w2.value), (
+assert not jnp.allclose(sq.w1[...], sq.w2[...]), (
     'w1 and w2 are identical — call rngs.params() once per matrix instead of reusing one key'
 )
 """,
@@ -259,7 +259,9 @@ assert names == ['b1', 'b2', 'w1', 'w2'], (
 )
 for name in names:
     g = grads[name]
-    v = g.value if hasattr(g, 'value') else g
+    # nnx.grad hands back Variables; unwrap without touching the deprecated
+    # .value property (even hasattr(g, 'value') would trigger its warning).
+    v = g[...] if isinstance(g, nnx.Variable) else g
     assert jnp.isfinite(v).all(), f'Non-finite gradient for {name}'
     assert float(jnp.abs(v).sum()) > 0, (
         f'Gradient for {name} is all zeros — that param is not in the forward path'

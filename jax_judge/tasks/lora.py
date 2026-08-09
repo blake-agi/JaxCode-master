@@ -115,10 +115,10 @@ class LoRALinear(nnx.Module):
         self.B = nnx.Param(jnp.zeros((rank, dout)))
 
     def __call__(self, x):
-        base = x @ self.W.value
+        base = x @ self.W[...]
         # Kept factored: (..., din) @ (din, r) @ (r, dout). Forming A @ B first
         # would build the full (din, dout) matrix LoRA exists to avoid.
-        delta = (x @ self.A.value) @ self.B.value
+        delta = (x @ self.A[...]) @ self.B[...]
         return base + self.scaling * delta
 ''',
     "demo": '''import jax
@@ -128,7 +128,7 @@ from flax import nnx
 layer = LoRALinear(64, 64, rank=4, alpha=8.0, rngs=nnx.Rngs(0))
 x = jax.random.normal(jax.random.key(1), (2, 64))
 
-print("adapter output at init:", float(jnp.abs(layer(x) - x @ layer.W.value).max()))
+print("adapter output at init:", float(jnp.abs(layer(x) - x @ layer.W[...]).max()))
 
 params = nnx.state(layer, nnx.Param)
 n = sum(p.size for p in jax.tree.leaves(params))
@@ -149,7 +149,7 @@ x = jax.random.normal(jax.random.key(1), (5, 32))
 out = layer(x)
 assert out.shape == (5, 16), f'Expected (5, 16), got {out.shape}'
 
-base = x @ layer.W.value
+base = x @ layer.W[...]
 assert jnp.allclose(out, base, atol=1e-6), (
     f'At init B is zero so the adapter must contribute EXACTLY nothing: '
     f'max deviation {float(jnp.abs(out - base).max()):.2e}. This is the property '
@@ -166,8 +166,8 @@ from flax import nnx
 
 layer = {fn}(24, 12, rank=4, alpha=1.0, rngs=nnx.Rngs(0))
 
-A = layer.A.value
-B = layer.B.value
+A = layer.A[...]
+B = layer.B[...]
 assert A.shape == (24, 4), f'A should be (din, rank) = (24, 4), got {A.shape}'
 assert B.shape == (4, 12), f'B should be (rank, dout) = (4, 12), got {B.shape}'
 
@@ -209,7 +209,7 @@ from flax import nnx
 
 layer = {fn}(16, 8, rank=2, alpha=4.0, rngs=nnx.Rngs(0))
 x = jax.random.normal(jax.random.key(2), (4, 16))
-W_before = jnp.array(layer.W.value)
+W_before = jnp.array(layer.W[...])
 
 
 def loss_fn(m):
@@ -227,8 +227,8 @@ assert total == 16 * 2 + 2 * 8, (
 )
 
 flat = nnx.state(grads)
-gA = flat["A"].value
-gB = flat["B"].value
+gA = flat["A"][...]
+gB = flat["B"][...]
 assert jnp.abs(gB).max() > 1e-8, (
     'dL/dB must be non-zero — it is proportional to (xA)^T, and A is non-zero'
 )
@@ -236,7 +236,7 @@ assert jnp.allclose(gA, 0.0, atol=1e-9), (
     f'At init dL/dA is proportional to B^T = 0, so it must vanish on the FIRST '
     f'step, got max {float(jnp.abs(gA).max()):.2e}'
 )
-assert jnp.allclose(layer.W.value, W_before), 'The base weight must not be mutated'
+assert jnp.allclose(layer.W[...], W_before), 'The base weight must not be mutated'
 """,
         },
         {
@@ -251,8 +251,8 @@ x = jax.random.normal(jax.random.key(3), (3, 20))
 def with_alpha(alpha, rank=4):
     m = {fn}(20, 10, rank=rank, alpha=alpha, rngs=nnx.Rngs(0))
     # Give B a fixed non-zero value so the adapter actually contributes.
-    m.B.value = jnp.ones_like(m.B.value) * 0.1
-    return m, m(x) - x @ m.W.value
+    m.B[...] = jnp.ones_like(m.B[...]) * 0.1
+    return m, m(x) - x @ m.W[...]
 
 _, d1 = with_alpha(1.0)
 _, d2 = with_alpha(2.0)
@@ -265,10 +265,10 @@ assert jnp.allclose(d2, 2 * d1, rtol=1e-4), (
 # forgets the scaling entirely, fails here.
 for rank, alpha in ((2, 4.0), (4, 4.0), (8, 16.0)):
     m = {fn}(20, 10, rank=rank, alpha=alpha, rngs=nnx.Rngs(0))
-    m.B.value = jax.random.normal(jax.random.key(9), m.B.value.shape) * 0.3
+    m.B[...] = jax.random.normal(jax.random.key(9), m.B[...].shape) * 0.3
 
-    delta = m(x) - x @ m.W.value
-    expected = (alpha / rank) * ((x @ m.A.value) @ m.B.value)
+    delta = m(x) - x @ m.W[...]
+    expected = (alpha / rank) * ((x @ m.A[...]) @ m.B[...])
     assert jnp.allclose(delta, expected, atol=1e-5), (
         f'rank={rank} alpha={alpha}: the adapter must be scaled by '
         f'alpha/rank = {alpha / rank}, max diff '
@@ -276,7 +276,7 @@ for rank, alpha in ((2, 4.0), (4, 4.0), (8, 16.0)):
     )
 
     # Scaling by alpha alone would be wrong by exactly a factor of `rank`.
-    wrong = alpha * ((x @ m.A.value) @ m.B.value)
+    wrong = alpha * ((x @ m.A[...]) @ m.B[...])
     if rank != 1:
         assert not jnp.allclose(delta, wrong, atol=1e-5), (
             f'rank={rank}: the contribution is not divided by rank'
@@ -291,12 +291,12 @@ import jax.numpy as jnp
 from flax import nnx
 
 layer = {fn}(12, 6, rank=3, alpha=6.0, rngs=nnx.Rngs(0))
-layer.B.value = jax.random.normal(jax.random.key(4), layer.B.value.shape) * 0.3
+layer.B[...] = jax.random.normal(jax.random.key(4), layer.B[...].shape) * 0.3
 
 x = jax.random.normal(jax.random.key(5), (7, 12))
 got = layer(x)
 
-W, A, B = layer.W.value, layer.A.value, layer.B.value
+W, A, B = layer.W[...], layer.A[...], layer.B[...]
 expected = x @ W + (6.0 / 3) * ((x @ A) @ B)
 assert jnp.allclose(got, expected, atol=1e-5), (
     f'max diff {float(jnp.abs(got - expected).max()):.2e}'

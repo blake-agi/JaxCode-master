@@ -154,12 +154,12 @@ print("image", x.shape, "->", pe(x).shape, " num_patches =", pe.num_patches)
 
 # It is a stride-P convolution. Same weight, reshaped into an HWIO kernel.
 P, C, E = 8, 3, 64
-kernel = pe.w.value.reshape(P, P, C, E)
+kernel = pe.w[...].reshape(P, P, C, E)
 conv = jax.lax.conv_general_dilated(
     x, kernel, window_strides=(P, P), padding="VALID",
     dimension_numbers=("NHWC", "HWIO", "NHWC"),
 )
-conv = conv.reshape(x.shape[0], -1, E) + pe.b.value
+conv = conv.reshape(x.shape[0], -1, E) + pe.b[...]
 print("max |reshape - conv| =", float(jnp.abs(pe(x) - conv).max()))
 
 # The trap: reshaping without the transpose gives full image ROWS, not squares.
@@ -229,8 +229,8 @@ E = P * P * C
 pe = {fn}(img_size=8, patch_size=P, in_channels=C, embed_dim=E, rngs=nnx.Rngs(0))
 
 # Make the projection an identity so the output IS the flattened patch.
-pe.w.value = jnp.eye(E)
-pe.b.value = jnp.zeros((E,))
+pe.w[...] = jnp.eye(E)
+pe.b[...] = jnp.zeros((E,))
 
 x = jax.random.normal(jax.random.key(0), (B, H, W, C))
 out = pe(x)
@@ -260,12 +260,12 @@ P, C, E = 4, 3, 8
 pe = {fn}(img_size=16, patch_size=P, in_channels=C, embed_dim=E, rngs=nnx.Rngs(0))
 x = jax.random.normal(jax.random.key(0), (2, 16, 16, C))
 
-kernel = pe.w.value.reshape(P, P, C, E)          # (P*P*C, E) -> HWIO
+kernel = pe.w[...].reshape(P, P, C, E)          # (P*P*C, E) -> HWIO
 conv = jax.lax.conv_general_dilated(
     x, kernel, window_strides=(P, P), padding='VALID',
     dimension_numbers=('NHWC', 'HWIO', 'NHWC'),
 )
-conv = conv.reshape(2, -1, E) + pe.b.value
+conv = conv.reshape(2, -1, E) + pe.b[...]
 
 assert jnp.allclose(pe(x), conv, atol=1e-4), (
     'Your patch embedding disagrees with the equivalent stride-P convolution. '

@@ -143,13 +143,13 @@ from flax import nnx
 layer = {fn}(4, 3, rngs=nnx.Rngs(params=0))
 x = jnp.array([[1.0, 2.0, 3.0, 4.0], [0.5, -1.0, 0.0, 2.0]])
 
-expected = x @ layer.w.value + layer.b.value
+expected = x @ layer.w[...] + layer.b[...]
 assert jnp.allclose(layer(x), expected, atol=1e-5), 'Output is not x @ w + b'
 
 # Bias must actually be added: setting it to a known value should shift the output.
-layer.b.value = jnp.array([10.0, 20.0, 30.0])
+layer.b[...] = jnp.array([10.0, 20.0, 30.0])
 shifted = layer(x)
-assert jnp.allclose(shifted, x @ layer.w.value + jnp.array([10.0, 20.0, 30.0]), atol=1e-5), (
+assert jnp.allclose(shifted, x @ layer.w[...] + jnp.array([10.0, 20.0, 30.0]), atol=1e-5), (
     'Bias is not being added'
 )
 """,
@@ -164,7 +164,7 @@ layer = {fn}(4, 3, use_bias=False, rngs=nnx.Rngs(params=0))
 x = jnp.ones((2, 4))
 
 assert layer.b is None, f'b should be None when use_bias=False, got {layer.b}'
-assert jnp.allclose(layer(x), x @ layer.w.value, atol=1e-5), 'Output should be x @ w only'
+assert jnp.allclose(layer(x), x @ layer.w[...], atol=1e-5), 'Output should be x @ w only'
 assert layer(x).shape == (2, 3), f'{layer(x).shape}'
 """,
         },
@@ -190,19 +190,19 @@ import jax.numpy as jnp
 from flax import nnx
 
 big = {fn}(256, 256, rngs=nnx.Rngs(params=0))
-std = float(jnp.std(big.w.value))
+std = float(jnp.std(big.w[...]))
 expected = 1.0 / jnp.sqrt(256.0)
 assert abs(std - expected) < 0.3 * expected, (
     f'w std is {std:.5f}, expected ~{expected:.5f} (normal / sqrt(din))'
 )
-assert jnp.allclose(big.b.value, 0.0), 'Bias must be initialised to zeros'
+assert jnp.allclose(big.b[...], 0.0), 'Bias must be initialised to zeros'
 
 # Different seeds must give different weights; the same seed must reproduce.
 a = {fn}(4, 3, rngs=nnx.Rngs(params=0))
 b = {fn}(4, 3, rngs=nnx.Rngs(params=1))
 c = {fn}(4, 3, rngs=nnx.Rngs(params=0))
-assert not jnp.allclose(a.w.value, b.w.value), 'Different seeds gave identical weights'
-assert jnp.allclose(a.w.value, c.w.value), 'Same seed must reproduce the same weights'
+assert not jnp.allclose(a.w[...], b.w[...]), 'Different seeds gave identical weights'
+assert jnp.allclose(a.w[...], c.w[...]), 'Same seed must reproduce the same weights'
 """,
         },
         {

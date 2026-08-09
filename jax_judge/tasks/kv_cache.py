@@ -130,20 +130,20 @@ class KVCache(nnx.Module):
 
     def update(self, k_new, v_new):
         s = k_new.shape[2]          # static: it comes from a shape
-        p = self.pos.value          # traced: it comes from state
+        p = self.pos[...]          # traced: it comes from state
 
         # In-place write at a dynamic offset, keeping the buffer shape constant.
-        self.k_cache.value = jax.lax.dynamic_update_slice_in_dim(
-            self.k_cache.value, k_new, p, axis=2
+        self.k_cache[...] = jax.lax.dynamic_update_slice_in_dim(
+            self.k_cache[...], k_new, p, axis=2
         )
-        self.v_cache.value = jax.lax.dynamic_update_slice_in_dim(
-            self.v_cache.value, v_new, p, axis=2
+        self.v_cache[...] = jax.lax.dynamic_update_slice_in_dim(
+            self.v_cache[...], v_new, p, axis=2
         )
-        self.pos.value = p + s
+        self.pos[...] = p + s
 
         # "The valid slice", expressed so the shape stays static.
-        mask = jnp.arange(self.max_len) < self.pos.value
-        return self.k_cache.value, self.v_cache.value, mask
+        mask = jnp.arange(self.max_len) < self.pos[...]
+        return self.k_cache[...], self.v_cache[...], mask
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
@@ -153,12 +153,12 @@ B, H, Dh, MAX = 1, 2, 4, 8
 cache = KVCache(B, H, MAX, Dh)
 key = jax.random.key(0)
 
-print("pos:", cache.pos.value, " buffer:", cache.k_cache.value.shape)
+print("pos:", cache.pos[...], " buffer:", cache.k_cache[...].shape)
 
 # Prefill 3 tokens, then decode 2 more one at a time.
 k, v = jax.random.normal(key, (2, B, H, 3, Dh))
 keys, values, mask = cache.update(k, v)
-print("after prefill  pos=", cache.pos.value, "mask=", mask)
+print("after prefill  pos=", cache.pos[...], "mask=", mask)
 
 for step in range(2):
     k1, v1 = jax.random.normal(jax.random.key(step + 1), (2, B, H, 1, Dh))
@@ -181,14 +181,14 @@ from flax import nnx
 
 cache = {fn}(2, 4, 16, 8)
 
-assert cache.k_cache.value.shape == (2, 4, 16, 8), (
-    f'k_cache is {cache.k_cache.value.shape}, expected the FULL (2, 4, 16, 8) buffer '
+assert cache.k_cache[...].shape == (2, 4, 16, 8), (
+    f'k_cache is {cache.k_cache[...].shape}, expected the FULL (2, 4, 16, 8) buffer '
     'allocated up front'
 )
-assert cache.v_cache.value.shape == (2, 4, 16, 8), f'v_cache {cache.v_cache.value.shape}'
-assert jnp.allclose(cache.k_cache.value, 0.0), 'k_cache must start as zeros'
-assert jnp.allclose(cache.v_cache.value, 0.0), 'v_cache must start as zeros'
-assert int(cache.pos.value) == 0, f'pos must start at 0, got {cache.pos.value}'
+assert cache.v_cache[...].shape == (2, 4, 16, 8), f'v_cache {cache.v_cache[...].shape}'
+assert jnp.allclose(cache.k_cache[...], 0.0), 'k_cache must start as zeros'
+assert jnp.allclose(cache.v_cache[...], 0.0), 'v_cache must start as zeros'
+assert int(cache.pos[...]) == 0, f'pos must start at 0, got {cache.pos[...]}'
 
 for name in ('k_cache', 'v_cache', 'pos'):
     var = getattr(cache, name)
@@ -216,7 +216,7 @@ v_all = jax.random.normal(jax.random.key(1), (B, H, MAX, Dh))
 
 for t in range(3):
     keys, values, mask = cache.update(k_all[:, :, t:t + 1], v_all[:, :, t:t + 1])
-    assert int(cache.pos.value) == t + 1, f'After {t + 1} writes pos={cache.pos.value}'
+    assert int(cache.pos[...]) == t + 1, f'After {t + 1} writes pos={cache.pos[...]}'
     assert mask.shape == (MAX,), f'mask shape {mask.shape} vs ({MAX},)'
     assert int(mask.sum()) == t + 1, f'mask marks {int(mask.sum())} valid, expected {t + 1}'
     assert bool(mask[t]) and not bool(mask[t + 1]), f'mask boundary wrong at t={t}: {mask}'
@@ -250,7 +250,7 @@ assert all(s == shapes[0] for s in shapes), (
     'new XLA program every step — return the full preallocated buffer plus a mask.'
 )
 assert shapes[0][0] == (B, H, MAX, Dh), f'{shapes[0][0]} vs {(B, H, MAX, Dh)}'
-assert int(cache.pos.value) == 5, f'pos={cache.pos.value} after 5 single-token writes'
+assert int(cache.pos[...]) == 5, f'pos={cache.pos[...]} after 5 single-token writes'
 """,
         },
         {
@@ -266,14 +266,14 @@ v_all = jax.random.normal(jax.random.key(5), (B, H, 6, Dh))
 
 # Prefill 4 tokens at once.
 keys, values, mask = cache.update(k_all[:, :, :4], v_all[:, :, :4])
-assert int(cache.pos.value) == 4, f'Prefill must advance pos by S=4, got {cache.pos.value}'
+assert int(cache.pos[...]) == 4, f'Prefill must advance pos by S=4, got {cache.pos[...]}'
 assert int(mask.sum()) == 4, f'{int(mask.sum())} valid after prefill, expected 4'
 
 # Then two single-token decode steps.
 for t in (4, 5):
     keys, values, mask = cache.update(k_all[:, :, t:t + 1], v_all[:, :, t:t + 1])
 
-assert int(cache.pos.value) == 6, f'pos={cache.pos.value}, expected 6'
+assert int(cache.pos[...]) == 6, f'pos={cache.pos[...]}, expected 6'
 assert jnp.allclose(keys[:, :, :6], k_all, atol=1e-6), (
     'Prefill + decode must reconstruct the full key sequence in order'
 )
@@ -349,8 +349,8 @@ assert traces['n'] == 1, (
     f'The decode step was traced {traces["n"]} times for 6 tokens — it must compile '
     'exactly once. A shape that grows with the sequence forces a recompile per step.'
 )
-assert int(cache.pos.value) == 6, (
-    f'pos={cache.pos.value} after 6 jitted steps — nnx.jit must propagate the '
+assert int(cache.pos[...]) == 6, (
+    f'pos={cache.pos[...]} after 6 jitted steps — nnx.jit must propagate the '
     'mutated cache state back out'
 )
 assert int(mask.sum()) == 6, f'{int(mask.sum())} valid positions, expected 6'

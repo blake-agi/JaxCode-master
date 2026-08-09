@@ -126,8 +126,8 @@ assert isinstance(ln.scale, nnx.Param), f'scale must be nnx.Param, got {type(ln.
 assert isinstance(ln.bias, nnx.Param), f'bias must be nnx.Param, got {type(ln.bias)}'
 assert ln.scale.shape == (8,), f'scale shape {ln.scale.shape} vs (8,)'
 assert ln.bias.shape == (8,), f'bias shape {ln.bias.shape} vs (8,)'
-assert jnp.allclose(ln.scale.value, 1.0), 'scale must be initialised to ones'
-assert jnp.allclose(ln.bias.value, 0.0), 'bias must be initialised to zeros'
+assert jnp.allclose(ln.scale[...], 1.0), 'scale must be initialised to ones'
+assert jnp.allclose(ln.bias[...], 0.0), 'bias must be initialised to zeros'
 """,
         },
         {
@@ -139,8 +139,8 @@ import jax.numpy as jnp
 ln = {fn}(4)
 x = jax.random.normal(jax.random.key(1), (3, 4))
 
-ln.scale.value = jnp.array([2.0, 2.0, 2.0, 2.0])
-ln.bias.value = jnp.array([1.0, 1.0, 1.0, 1.0])
+ln.scale[...] = jnp.array([2.0, 2.0, 2.0, 2.0])
+ln.bias[...] = jnp.array([1.0, 1.0, 1.0, 1.0])
 out = ln(x)
 
 mu = jnp.mean(x, axis=-1, keepdims=True)

@@ -91,7 +91,7 @@ class Embedding(nnx.Module):
 
     def attend(self, x):
         # Weight tying: reuse the same matrix for the output projection.
-        return x @ self.table.value.T
+        return x @ self.table[...].T
 ''',
     "demo": '''import jax.numpy as jnp
 from flax import nnx
@@ -116,7 +116,7 @@ emb = {fn}(100, 16, rngs=nnx.Rngs(params=0))
 assert isinstance(emb.table, nnx.Param), f'table must be nnx.Param, got {type(emb.table)}'
 assert emb.table.shape == (100, 16), f'{emb.table.shape} vs (100, 16)'
 
-std = float(jnp.std(emb.table.value))
+std = float(jnp.std(emb.table[...]))
 assert 0.01 < std < 0.03, f'Init std should be ~0.02, got {std:.4f}'
 """,
         },
@@ -145,7 +145,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 emb = {fn}(10, 4, rngs=nnx.Rngs(params=0))
-table = emb.table.value
+table = emb.table[...]
 
 ids = jnp.array([0, 5, 9, 5])
 out = emb(ids)
@@ -167,7 +167,7 @@ emb = {fn}(20, 6, rngs=nnx.Rngs(params=0))
 ids = jax.random.randint(jax.random.key(0), (3, 5), 0, 20)
 
 gathered = emb(ids)
-one_hot = jax.nn.one_hot(ids, 20) @ emb.table.value
+one_hot = jax.nn.one_hot(ids, 20) @ emb.table[...]
 
 assert jnp.allclose(gathered, one_hot, atol=1e-5), (
     'Gather must equal the one-hot matmul'
@@ -186,10 +186,10 @@ x = jax.random.normal(jax.random.key(0), (2, 4, 8))
 
 logits = emb.attend(x)
 assert logits.shape == (2, 4, 30), f'{logits.shape} vs (2, 4, 30)'
-assert jnp.allclose(logits, x @ emb.table.value.T, atol=1e-4), 'attend must be x @ table.T'
+assert jnp.allclose(logits, x @ emb.table[...].T, atol=1e-4), 'attend must be x @ table.T'
 
 # Weight tying sanity: a token's own embedding should score highest against itself.
-row = emb.table.value[7]
+row = emb.table[...][7]
 scores = emb.attend(row)
 assert int(jnp.argmax(scores)) == 7, (
     f'The embedding of token 7 should score highest on token 7, got {int(jnp.argmax(scores))}'

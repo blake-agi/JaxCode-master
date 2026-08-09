@@ -238,13 +238,13 @@ def split(y, t):
     return y.reshape(B, t, H, dh).transpose(0, 2, 1, 3)
 
 
-q = split(x_q @ m.w_q.value, T_q)
-k = split(x_kv @ m.w_k.value, T_kv)
-v = split(x_kv @ m.w_v.value, T_kv)
+q = split(x_q @ m.w_q[...], T_q)
+k = split(x_kv @ m.w_k[...], T_kv)
+v = split(x_kv @ m.w_v[...], T_kv)
 scores = (q @ jnp.swapaxes(k, -1, -2)) / jnp.sqrt(float(dh))
 assert scores.shape == (B, H, T_q, T_kv)
 attn = jax.nn.softmax(scores, axis=-1) @ v
-ref = attn.transpose(0, 2, 1, 3).reshape(B, T_q, D) @ m.w_o.value
+ref = attn.transpose(0, 2, 1, 3).reshape(B, T_q, D) @ m.w_o[...]
 
 assert jnp.allclose(out, ref, atol=1e-5), (
     'Output does not match the reference. Check: Q comes from x_q and K/V from '

@@ -126,7 +126,7 @@ class MoELayer(nnx.Module):
         flat = x.reshape(-1, D)                             # (N, D)
         N = flat.shape[0]
 
-        logits = flat @ self.w_router.value                 # (N, E)
+        logits = flat @ self.w_router[...]                 # (N, E)
         probs = jax.nn.softmax(logits, axis=-1)             # full soft routing
 
         top_vals, top_idx = jax.lax.top_k(logits, k)        # (N, k)
@@ -135,8 +135,8 @@ class MoELayer(nnx.Module):
 
         # Dense compute: every expert on every token, then gather. Correct and
         # simple; a production kernel would dispatch instead.
-        h = jax.nn.relu(jnp.einsum("nd,edh->enh", flat, self.w1.value))
-        all_out = jnp.einsum("enh,ehd->ned", h, self.w2.value)   # (N, E, D)
+        h = jax.nn.relu(jnp.einsum("nd,edh->enh", flat, self.w1[...]))
+        all_out = jnp.einsum("enh,ehd->ned", h, self.w2[...])   # (N, E, D)
 
         # picked[n, j] = all_out[n, top_idx[n, j]]
         picked = jnp.take_along_axis(all_out, top_idx[:, :, None], axis=1)
@@ -201,18 +201,18 @@ from flax import nnx
 # must then equal that single expert's output exactly, with weight 1.0.
 layer = {fn}(d_model=8, d_hidden=16, num_experts=4, top_k=1, rngs=nnx.Rngs(0))
 
-w1 = layer.w1.value if hasattr(layer, 'w1') else None
+w1 = layer.w1[...] if hasattr(layer, 'w1') else None
 assert w1 is not None, 'Expected stacked expert weights on self.w1'
 
 # Force every expert to be the same function.
-layer.w1.value = jnp.tile(layer.w1.value[:1], (4, 1, 1))
-layer.w2.value = jnp.tile(layer.w2.value[:1], (4, 1, 1))
+layer.w1[...] = jnp.tile(layer.w1[...][:1], (4, 1, 1))
+layer.w2[...] = jnp.tile(layer.w2[...][:1], (4, 1, 1))
 
 x = jax.random.normal(jax.random.key(2), (1, 6, 8))
 out, _ = layer(x)
 
 flat = x.reshape(-1, 8)
-expected = jax.nn.relu(flat @ layer.w1.value[0]) @ layer.w2.value[0]
+expected = jax.nn.relu(flat @ layer.w1[...][0]) @ layer.w2[...][0]
 assert jnp.allclose(out.reshape(-1, 8), expected, atol=1e-4), (
     f'With identical experts and top_k=1 the weight must be exactly 1.0. '
     f'Max diff {float(jnp.abs(out.reshape(-1, 8) - expected).max()):.2e} — this '
@@ -233,14 +233,14 @@ from flax import nnx
 # sum to well under 1 and the output is scaled down.
 E, k = 8, 2
 layer = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=k, rngs=nnx.Rngs(0))
-layer.w1.value = jnp.tile(layer.w1.value[:1], (E, 1, 1))
-layer.w2.value = jnp.tile(layer.w2.value[:1], (E, 1, 1))
+layer.w1[...] = jnp.tile(layer.w1[...][:1], (E, 1, 1))
+layer.w2[...] = jnp.tile(layer.w2[...][:1], (E, 1, 1))
 
 x = jax.random.normal(jax.random.key(3), (1, 5, 8))
 out, _ = layer(x)
 
 flat = x.reshape(-1, 8)
-expected = jax.nn.relu(flat @ layer.w1.value[0]) @ layer.w2.value[0]
+expected = jax.nn.relu(flat @ layer.w1[...][0]) @ layer.w2[...][0]
 
 assert jnp.allclose(out.reshape(-1, 8), expected, atol=1e-4), (
     f'Expected the kept weights to sum to 1 (giving one expert back exactly). '
@@ -263,14 +263,14 @@ x = jax.random.normal(jax.random.key(4), (1, 4, 8))
 out_before, _ = layer(x)
 
 # Find which experts the router picks, then corrupt an expert it did NOT pick.
-logits = x.reshape(-1, 8) @ layer.w_router.value
+logits = x.reshape(-1, 8) @ layer.w_router[...]
 _, idx = jax.lax.top_k(logits, k)
 used = set(int(i) for i in idx.reshape(-1))
 unused = [e for e in range(E) if e not in used]
 assert unused, 'test setup: expected at least one unused expert'
 
 victim = unused[0]
-layer.w2.value = layer.w2.value.at[victim].set(layer.w2.value[victim] + 100.0)
+layer.w2[...] = layer.w2[...].at[victim].set(layer.w2[...][victim] + 100.0)
 out_after, _ = layer(x)
 
 assert jnp.allclose(out_before, out_after, atol=1e-4), (
@@ -280,7 +280,7 @@ assert jnp.allclose(out_before, out_after, atol=1e-4), (
 
 # And perturbing a USED expert must change it.
 target = list(used)[0]
-layer.w2.value = layer.w2.value.at[target].set(layer.w2.value[target] + 100.0)
+layer.w2[...] = layer.w2[...].at[target].set(layer.w2[...][target] + 100.0)
 out_used, _ = layer(x)
 assert not jnp.allclose(out_before, out_used, atol=1e-3), (
     f'Perturbing expert {target}, which IS selected, left the output unchanged'
@@ -300,7 +300,7 @@ layer = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=2, rngs=nnx.Rngs(0))
 # A zero router gives uniform logits -> uniform probabilities. top_k then splits
 # evenly enough over many tokens that f_e -> k/E and P_e = 1/E, so
 # aux = E * sum_e (k/E)(1/E) = k/E * ... normalised to 1 for a balanced layer.
-layer.w_router.value = jnp.zeros_like(layer.w_router.value)
+layer.w_router[...] = jnp.zeros_like(layer.w_router[...])
 x = jax.random.normal(jax.random.key(5), (4, 32, 8))
 _, aux = layer(x)
 
@@ -325,13 +325,13 @@ E = 8
 x = jax.random.normal(jax.random.key(6), (4, 32, 8))
 
 balanced = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=1, rngs=nnx.Rngs(0))
-balanced.w_router.value = jnp.zeros_like(balanced.w_router.value)
+balanced.w_router[...] = jnp.zeros_like(balanced.w_router[...])
 _, aux_bal = balanced(x)
 
 # Collapsed router: expert 0 wins for every token.
 collapsed = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=1, rngs=nnx.Rngs(0))
-w = jnp.zeros_like(collapsed.w_router.value)
-collapsed.w_router.value = w.at[:, 0].set(50.0)
+w = jnp.zeros_like(collapsed.w_router[...])
+collapsed.w_router[...] = w.at[:, 0].set(50.0)
 _, aux_col = collapsed(x)
 
 assert aux_col > aux_bal, (
@@ -361,7 +361,7 @@ def loss_fn(m):
 grads = nnx.grad(loss_fn)(layer)
 flat = nnx.state(grads)
 
-g_router = flat["w_router"].value
+g_router = flat["w_router"][...]
 assert jnp.isfinite(g_router).all(), 'Non-finite router gradient'
 assert jnp.abs(g_router).max() > 1e-8, (
     'The router received no gradient — routing weights must multiply the '
@@ -369,7 +369,7 @@ assert jnp.abs(g_router).max() > 1e-8, (
 )
 
 # The aux loss alone must also produce a router gradient, via P_e.
-g_aux = nnx.state(nnx.grad(lambda m: m(x)[1])(layer))["w_router"].value
+g_aux = nnx.state(nnx.grad(lambda m: m(x)[1])(layer))["w_router"][...]
 assert jnp.abs(g_aux).max() > 1e-10, (
     'The aux loss produced no router gradient. f_e is non-differentiable (it '
     'comes from top_k), so the gradient must flow through the soft P_e term.'

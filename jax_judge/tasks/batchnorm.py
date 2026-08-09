@@ -11,7 +11,7 @@ TASK = {
         "axis=0, for (N, H, W, C) that is (0, 1, 2). Build it generically with "
         "reduce_axes = tuple(range(x.ndim - 1)). In training mode normalise with "
         "the batch stats and then update the running buffers in place — "
-        "self.running_mean.value = momentum * self.running_mean.value + "
+        "self.running_mean[...] = momentum * self.running_mean[...] + "
         "(1 - momentum) * batch_mean. In eval mode use the running buffers and "
         "update nothing. Store the buffers as nnx.BatchStat, not nnx.Param, so "
         "the optimizer never sees them."
@@ -47,7 +47,7 @@ params = nnx.state(model, nnx.Param)        # optimizer sees only these
 stats  = nnx.state(model, nnx.BatchStat)    # carried along, never differentiated
 ```
 
-NNX modules are **mutable**, so `self.running_mean.value = ...` inside `__call__`
+NNX modules are **mutable**, so `self.running_mean[...] = ...` inside `__call__`
 just works — no threading of a `mutable` collection through every call the way
 Linen requires. This is the clearest demonstration of what NNX buys you.
 
@@ -92,8 +92,8 @@ class BatchNorm(nnx.Module):
 
     def __call__(self, x, use_running_average: bool = False):
         if use_running_average:
-            mean = self.running_mean.value
-            var = self.running_var.value
+            mean = self.running_mean[...]
+            var = self.running_var[...]
         else:
             # Every axis except the feature axis.
             reduce_axes = tuple(range(x.ndim - 1))
@@ -101,8 +101,8 @@ class BatchNorm(nnx.Module):
             var = jnp.var(x, axis=reduce_axes)
             m = self.momentum
             # NNX modules are mutable — assign the new buffers directly.
-            self.running_mean.value = m * self.running_mean.value + (1 - m) * mean
-            self.running_var.value = m * self.running_var.value + (1 - m) * var
+            self.running_mean[...] = m * self.running_mean[...] + (1 - m) * mean
+            self.running_var[...] = m * self.running_var[...] + (1 - m) * var
 
         x_hat = (x - mean) / jnp.sqrt(var + self.eps)
         return x_hat * self.scale + self.bias
@@ -114,9 +114,9 @@ from flax import nnx
 bn = BatchNorm(4)
 x = jax.random.normal(jax.random.key(0), (32, 4)) * 3.0 + 5.0
 
-print("running_mean before:", bn.running_mean.value)
+print("running_mean before:", bn.running_mean[...])
 out = bn(x)                       # training mode
-print("running_mean after: ", bn.running_mean.value)
+print("running_mean after: ", bn.running_mean[...])
 print("train-mode output mean:", out.mean(0), "(~0)")
 
 eval_out = bn(x, use_running_average=True)
@@ -160,9 +160,9 @@ assert isinstance(bn.running_var, nnx.BatchStat), (
     f'running_var must be nnx.BatchStat, got {type(bn.running_var)}'
 )
 
-assert jnp.allclose(bn.running_mean.value, 0.0), 'running_mean must start at zeros'
-assert jnp.allclose(bn.running_var.value, 1.0), 'running_var must start at ones'
-assert jnp.allclose(bn.scale.value, 1.0) and jnp.allclose(bn.bias.value, 0.0)
+assert jnp.allclose(bn.running_mean[...], 0.0), 'running_mean must start at zeros'
+assert jnp.allclose(bn.running_var[...], 1.0), 'running_var must start at ones'
+assert jnp.allclose(bn.scale[...], 1.0) and jnp.allclose(bn.bias[...], 0.0)
 
 # Params and stats must be separable — this is what the optimizer relies on.
 params = nnx.state(bn, nnx.Param)
@@ -189,18 +189,18 @@ bn(x, use_running_average=False)
 expected_mean = 0.9 * 0.0 + 0.1 * batch_mean
 expected_var = 0.9 * 1.0 + 0.1 * batch_var
 
-assert jnp.allclose(bn.running_mean.value, expected_mean, atol=1e-4), (
-    f'{bn.running_mean.value} vs {expected_mean} — check momentum * old + (1 - momentum) * new'
+assert jnp.allclose(bn.running_mean[...], expected_mean, atol=1e-4), (
+    f'{bn.running_mean[...]} vs {expected_mean} — check momentum * old + (1 - momentum) * new'
 )
-assert jnp.allclose(bn.running_var.value, expected_var, atol=1e-4), (
-    f'{bn.running_var.value} vs {expected_var}'
+assert jnp.allclose(bn.running_var[...], expected_var, atol=1e-4), (
+    f'{bn.running_var[...]} vs {expected_var}'
 )
 
 # After many passes the running stats should approach the true batch stats.
 for _ in range(200):
     bn(x, use_running_average=False)
-assert jnp.allclose(bn.running_mean.value, batch_mean, atol=1e-2), 'EMA did not converge'
-assert jnp.allclose(bn.running_var.value, batch_var, atol=1e-2), 'EMA did not converge'
+assert jnp.allclose(bn.running_mean[...], batch_mean, atol=1e-2), 'EMA did not converge'
+assert jnp.allclose(bn.running_var[...], batch_var, atol=1e-2), 'EMA did not converge'
 """,
         },
         {
@@ -212,15 +212,15 @@ import jax.numpy as jnp
 bn = {fn}(4)
 x = jax.random.normal(jax.random.key(2), (16, 4)) * 3.0 + 1.0
 
-before_mean = bn.running_mean.value.copy()
-before_var = bn.running_var.value.copy()
+before_mean = bn.running_mean[...].copy()
+before_var = bn.running_var[...].copy()
 
 out = bn(x, use_running_average=True)
 
-assert jnp.allclose(bn.running_mean.value, before_mean), (
+assert jnp.allclose(bn.running_mean[...], before_mean), (
     'running_mean changed in eval mode — buffers must only update during training'
 )
-assert jnp.allclose(bn.running_var.value, before_var), 'running_var changed in eval mode'
+assert jnp.allclose(bn.running_var[...], before_var), 'running_var changed in eval mode'
 
 # With the initial buffers (mean 0, var 1) eval mode is nearly a no-op.
 assert jnp.allclose(out, x, atol=1e-3), (
@@ -271,7 +271,7 @@ assert jnp.allclose(jnp.mean(out, axis=(0, 1, 2)), 0.0, atol=1e-4), (
     'Per-channel mean should be ~0 — reduce over every axis except the last'
 )
 assert jnp.allclose(jnp.std(out, axis=(0, 1, 2)), 1.0, atol=1e-3), 'Per-channel std'
-assert bn.running_mean.value.shape == (3,), f'{bn.running_mean.value.shape} vs (3,)'
+assert bn.running_mean[...].shape == (3,), f'{bn.running_mean[...].shape} vs (3,)'
 """,
         },
         {
@@ -284,8 +284,8 @@ from flax import nnx
 bn = {fn}(4)
 x = jax.random.normal(jax.random.key(5), (16, 4))
 
-bn.scale.value = jnp.full((4,), 2.0)
-bn.bias.value = jnp.full((4,), 5.0)
+bn.scale[...] = jnp.full((4,), 2.0)
+bn.bias[...] = jnp.full((4,), 5.0)
 out = bn(x, use_running_average=False)
 assert jnp.allclose(jnp.mean(out, axis=0), 5.0, atol=1e-3), 'bias should shift the mean'
 assert jnp.allclose(jnp.std(out, axis=0), 2.0, atol=1e-2), 'scale should stretch the std'
