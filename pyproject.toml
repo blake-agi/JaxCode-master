@@ -3,16 +3,13 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "torch-judge"
+name = "jax-judge"
 dynamic = ["version"]
-description = "PyTorch coding judge for Jupyter — check implementations against test cases (TorchCode)."
+description = "JAX/Flax coding judge for Jupyter — check implementations against test cases (JAXCode)."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
-authors = [
-    { name = "duoan" }
-]
-keywords = ["pytorch", "jupyter", "notebook", "judge", "torchcode", "interview", "practice"]
+keywords = ["jax", "flax", "nnx", "jupyter", "notebook", "judge", "jaxcode", "interview", "practice"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Education",
@@ -24,18 +21,22 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "torch>=2.0",
+    "jax>=0.4.30",
+    "flax>=0.10",
 ]
 
 [project.optional-dependencies]
 dev = [
     "build",
     "twine",
+    "nbclient",
+    "nbformat",
+    "ipykernel",
 ]
 
 [tool.setuptools.packages.find]
-include = ["torch_judge*"]
-exclude = ["labextension*", "scripts*", "templates*", "solutions*", "jupyter_config*"]
+include = ["jax_judge*"]
+exclude = ["labextension*", "scripts*", "templates*", "solutions*", "jupyter_config*", "web*", "api*"]
 
 [tool.setuptools.dynamic]
-version = {attr = "torch_judge._version.__version__"}
+version = {attr = "jax_judge._version.__version__"}

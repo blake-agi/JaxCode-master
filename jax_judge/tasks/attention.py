@@ -1,0 +1,310 @@
+"""Scaled dot-product attention as a pure function — the scaling and the mask."""
+
+TASK = {
+    "title": "Scaled Dot-Product Attention",
+    "category": "Attention & Transformers",
+    "order": 1,
+    "difficulty": "Medium",
+    "function_name": "scaled_dot_product_attention",
+    "hint": (
+        "scores = q @ jnp.swapaxes(k, -1, -2) / jnp.sqrt(q.shape[-1]) — the "
+        "swapaxes only touches the last two axes so the same code works for "
+        "(B, T, D) and (B, H, T, Dh). Apply the mask with "
+        "jnp.where(mask, scores, -1e9) BEFORE jax.nn.softmax(scores, axis=-1), "
+        "then weights @ v. Note d_k comes from q.shape[-1] (the key dim), not "
+        "from v.shape[-1] — those two are allowed to differ."
+    ),
+    "description": r"""
+Implement **scaled dot-product attention** as a plain function.
+
+$$\text{Attention}(Q, K, V) = \operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)V$$
+
+### Signature
+`scaled_dot_product_attention(q, k, v, mask=None)`
+
+| tensor | shape | notes |
+|---|---|---|
+| `q` | `(B, T_q, d_k)` | queries |
+| `k` | `(B, T_k, d_k)` | keys — same feature dim as `q` |
+| `v` | `(B, T_k, d_v)` | values — `d_v` may differ from `d_k` |
+| `mask` | broadcastable to `(B, T_q, T_k)` | boolean, `True` = **attend**, `False` = **block** |
+| returns | `(B, T_q, d_v)` | |
+
+### Rules
+- No `jax.nn.dot_product_attention`, no `nnx.MultiHeadAttention`
+- `jax.nn.softmax` is allowed and encouraged (it subtracts the row max for you)
+- `T_q` and `T_k` are independent — do not assume a square score matrix
+- Only the **last two** axes are contracted, so the identical code must also
+  accept `(B, H, T, D_h)` inputs. Use `jnp.swapaxes(k, -1, -2)`, never a
+  hard-coded `transpose(0, 2, 1)`
+- Masked positions are removed **before** the softmax, not zeroed after it
+
+### Why the $1/\sqrt{d_k}$ is not cosmetic
+Take $q, k$ with i.i.d. zero-mean unit-variance entries. Their dot product is a
+sum of $d_k$ independent unit-variance terms, so
+
+$$\operatorname{Var}(q \cdot k) = d_k, \qquad \operatorname{std}(q \cdot k) = \sqrt{d_k}$$
+
+At $d_k = 64$ the raw logits have standard deviation $8$, so the gap between the
+largest and a typical logit is routinely $20$+. `softmax` of that is numerically
+one-hot. And the Jacobian of softmax is $\operatorname{diag}(p) - pp^\top$,
+which vanishes as $p$ becomes one-hot — so the layer stops passing gradient
+before training has learned anything. Dividing by $\sqrt{d_k}$ pulls the logit
+variance back to $1$ regardless of head width, which is exactly why you can
+widen heads without retuning the initialisation.
+
+This is the single most common thing interviewers check, along with whether you
+scale by $\sqrt{d_k}$ (the **key** dim, per head) rather than $\sqrt{d_{model}}$.
+In multi-head attention those differ by a factor of $H$.
+""",
+    "stub": '''import jax
+import jax.numpy as jnp
+
+
+def scaled_dot_product_attention(q, k, v, mask=None):
+    """softmax(q k^T / sqrt(d_k)) v
+
+    Args:
+        q:    (..., T_q, d_k)
+        k:    (..., T_k, d_k)
+        v:    (..., T_k, d_v)
+        mask: optional boolean array broadcastable to (..., T_q, T_k);
+              True means "attend here", False means "block".
+
+    Returns:
+        (..., T_q, d_v)
+    """
+    pass  # Replace this
+''',
+    "solution": '''import jax
+import jax.numpy as jnp
+
+
+def scaled_dot_product_attention(q, k, v, mask=None):
+    d_k = q.shape[-1]
+
+    # swapaxes(-1, -2) transposes only the last two axes, so this works for
+    # (B, T, D) and for (B, H, T, Dh) without changing a line.
+    scores = (q @ jnp.swapaxes(k, -1, -2)) / jnp.sqrt(jnp.asarray(d_k, q.dtype))
+
+    if mask is not None:
+        # Blocked entries get a large negative logit BEFORE the softmax, so the
+        # normaliser never sees them at all.
+        scores = jnp.where(mask, scores, jnp.asarray(-1e9, scores.dtype))
+
+    weights = jax.nn.softmax(scores, axis=-1)   # subtracts the row max for us
+    return weights @ v
+''',
+    "demo": '''import jax
+import jax.numpy as jnp
+
+# What the scaling actually buys you: logit spread vs head width.
+key = jax.random.key(0)
+for d_k in (8, 64, 512):
+    kq, kk = jax.random.split(jax.random.key(d_k))
+    q = jax.random.normal(kq, (1, 1, d_k))
+    k = jax.random.normal(kk, (1, 64, d_k))
+    raw = (q @ jnp.swapaxes(k, -1, -2))[0, 0]
+    scaled = raw / jnp.sqrt(float(d_k))
+    p_raw = jax.nn.softmax(raw)
+    p_scaled = jax.nn.softmax(scaled)
+    print(f"d_k={d_k:4d}  logit std raw={raw.std():7.2f} scaled={scaled.std():5.2f}"
+          f"  max prob raw={p_raw.max():.3f} scaled={p_scaled.max():.3f}")
+
+# Cross shapes: 3 queries attending over 5 keys, values 8-dim.
+q = jax.random.normal(jax.random.key(1), (2, 3, 16))
+k = jax.random.normal(jax.random.key(2), (2, 5, 16))
+v = jax.random.normal(jax.random.key(3), (2, 5, 8))
+print("out:", scaled_dot_product_attention(q, k, v).shape)   # (2, 3, 8)
+''',
+    "tests": [
+        {
+            "name": "Hand-computed 1x2 case",
+            "code": """
+import jax.numpy as jnp
+
+q = jnp.array([[[1.0, 0.0]]])                    # (1, 1, 2)
+k = jnp.array([[[1.0, 0.0], [0.0, 1.0]]])        # (1, 2, 2)
+v = jnp.array([[[1.0, 0.0], [0.0, 1.0]]])        # (1, 2, 2)
+
+out = {fn}(q, k, v)
+assert out.shape == (1, 1, 2), f'Shape mismatch: {out.shape} vs (1, 1, 2)'
+
+# scores = [1, 0] / sqrt(2) = [0.7071, 0]
+# softmax -> [0.669762, 0.330238];  out = w0*v0 + w1*v1
+expected = jnp.array([[[0.669762, 0.330238]]])
+assert jnp.allclose(out, expected, atol=1e-5), (
+    f'{out} vs {expected} — if you got [0.7311, 0.2689] you forgot to divide '
+    'the scores by sqrt(d_k)'
+)
+""",
+        },
+        {
+            "name": "The 1/sqrt(d_k) scaling is present",
+            "code": """
+import jax.numpy as jnp
+
+# d_k = 4 so sqrt(d_k) = 2 exactly. Raw score is 4, scaled score is 2.
+q = jnp.array([[[2.0, 0.0, 0.0, 0.0]]])
+k = jnp.array([[[2.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]]])
+v = jnp.array([[[1.0, 0.0], [0.0, 1.0]]])
+
+out = {fn}(q, k, v)
+scaled = jnp.array([[[0.880797, 0.119203]]])     # softmax([2, 0])
+unscaled = jnp.array([[[0.982014, 0.017986]]])   # softmax([4, 0])
+
+assert not jnp.allclose(out, unscaled, atol=1e-4), (
+    'Scores are not being divided by sqrt(d_k) at all'
+)
+assert jnp.allclose(out, scaled, atol=1e-5), (
+    f'{out} vs {scaled} — divide by sqrt(q.shape[-1]), not by d_k itself '
+    'and not by sqrt(d_v)'
+)
+""",
+        },
+        {
+            "name": "Rectangular shapes and 4-D head axis",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+# T_q != T_k and d_v != d_k must both be fine.
+q = jax.random.normal(jax.random.key(0), (2, 3, 16))
+k = jax.random.normal(jax.random.key(1), (2, 5, 16))
+v = jax.random.normal(jax.random.key(2), (2, 5, 8))
+out = {fn}(q, k, v)
+assert out.shape == (2, 3, 8), (
+    f'{out.shape} vs (2, 3, 8) — output length comes from q, output width from v'
+)
+
+# The same function must accept a head axis: (B, H, T, Dh).
+q4 = jax.random.normal(jax.random.key(3), (2, 4, 6, 8))
+k4 = jax.random.normal(jax.random.key(4), (2, 4, 7, 8))
+v4 = jax.random.normal(jax.random.key(5), (2, 4, 7, 8))
+o4 = {fn}(q4, k4, v4)
+assert o4.shape == (2, 4, 6, 8), (
+    f'{o4.shape} vs (2, 4, 6, 8) — use jnp.swapaxes(k, -1, -2), not a '
+    'hard-coded 3-axis transpose'
+)
+# Each head must be computed independently of the others.
+assert jnp.allclose(o4[:, 0], {fn}(q4[:, 0], k4[:, 0], v4[:, 0]), atol=1e-5), (
+    'Head 0 of the batched call disagrees with computing head 0 alone'
+)
+""",
+        },
+        {
+            "name": "Output is a convex combination of the values",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+q = jax.random.normal(jax.random.key(0), (2, 4, 8)) * 3.0
+k = jax.random.normal(jax.random.key(1), (2, 6, 8)) * 3.0
+v = jax.random.normal(jax.random.key(2), (2, 6, 5))
+out = {fn}(q, k, v)
+
+lo = jnp.min(v, axis=1, keepdims=True)
+hi = jnp.max(v, axis=1, keepdims=True)
+assert jnp.all(out >= lo - 1e-4) and jnp.all(out <= hi + 1e-4), (
+    'Every output must lie inside the elementwise range of v, because the '
+    'attention weights are non-negative and sum to 1. Yours does not — the '
+    'softmax is probably along the wrong axis (it must be axis=-1, over keys).'
+)
+
+# Identical keys with identical values => a uniform average of v.
+kk = jnp.zeros((1, 4, 8))
+vv = jnp.array([[[0.0], [2.0], [4.0], [6.0]]])
+avg = {fn}(jnp.zeros((1, 1, 8)), kk, vv)
+assert jnp.allclose(avg, 3.0, atol=1e-5), (
+    f'All-equal scores should give the mean of v (3.0), got {avg}'
+)
+""",
+        },
+        {
+            "name": "Mask blocks keys before the softmax",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+q = jax.random.normal(jax.random.key(0), (1, 2, 4))
+k = jax.random.normal(jax.random.key(1), (1, 5, 4))
+v = jax.random.normal(jax.random.key(2), (1, 5, 3))
+
+mask = jnp.array([[[True, True, False, False, False],
+                   [True, True, True, False, False]]])   # (1, 2, 5)
+out = {fn}(q, k, v, mask)
+assert out.shape == (1, 2, 3), f'Masked output shape {out.shape} vs (1, 2, 3)'
+
+# Row 0 may only see keys 0..1, row 1 only keys 0..2. Renormalised over the
+# visible keys, so it must equal attention run on that slice alone.
+ref0 = {fn}(q[:, 0:1], k[:, :2], v[:, :2])[:, 0]
+ref1 = {fn}(q[:, 1:2], k[:, :3], v[:, :3])[:, 0]
+assert jnp.allclose(out[:, 0], ref0, atol=1e-5), (
+    'Masked row 0 does not match attention over its visible keys — the mask '
+    'must be applied to the scores BEFORE softmax so the denominator excludes '
+    'the blocked keys'
+)
+assert jnp.allclose(out[:, 1], ref1, atol=1e-5), 'Masked row 1 is wrong'
+
+# Blocked keys must have exactly zero influence.
+v2 = v.at[:, 3:].set(1e3)
+assert jnp.allclose({fn}(q, k, v2, mask), out, atol=1e-4), (
+    'Changing v at masked positions changed the output'
+)
+""",
+        },
+        {
+            "name": "Numerically stable at large logits",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+# Scores of order 1e3: a naive jnp.exp(scores) overflows to inf and then inf/inf.
+q = jax.random.normal(jax.random.key(0), (1, 3, 16)) * 60.0
+k = jax.random.normal(jax.random.key(1), (1, 3, 16)) * 60.0
+v = jax.random.normal(jax.random.key(2), (1, 3, 4))
+
+out = {fn}(q, k, v)
+assert jnp.isfinite(out).all(), (
+    f'Non-finite output at large logits: {out} — use jax.nn.softmax, which '
+    'subtracts the row max, instead of exp/sum by hand'
+)
+
+# All-equal-and-huge scores must still give the plain average of v.
+big = jnp.full((1, 1, 4), 100.0)
+kb = jnp.full((1, 3, 4), 100.0)
+vb = jnp.array([[[1.0], [2.0], [3.0]]])
+assert jnp.allclose({fn}(big, kb, vb), 2.0, atol=1e-4), 'Overflowed on equal large scores'
+""",
+        },
+        {
+            "name": "Gradients, jit and vmap",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+q = jax.random.normal(jax.random.key(0), (2, 4, 8))
+k = jax.random.normal(jax.random.key(1), (2, 6, 8))
+v = jax.random.normal(jax.random.key(2), (2, 6, 8))
+
+gq, gk, gv = jax.grad(lambda a, b, c: jnp.sum({fn}(a, b, c) ** 2),
+                      argnums=(0, 1, 2))(q, k, v)
+for name, g, ref in [('q', gq, q), ('k', gk, k), ('v', gv, v)]:
+    assert g.shape == ref.shape, f'Gradient w.r.t. {name} has shape {g.shape} vs {ref.shape}'
+    assert jnp.isfinite(g).all(), f'Non-finite gradient w.r.t. {name}'
+    assert float(jnp.abs(g).sum()) > 0.0, f'Gradient w.r.t. {name} is identically zero'
+
+jitted = jax.jit({fn})
+assert jnp.allclose(jitted(q, k, v), {fn}(q, k, v), atol=1e-5), 'jit changed the result'
+
+# vmap over the batch axis: the per-example call takes (T, D) inputs.
+vmapped = jax.vmap({fn})(q, k, v)
+assert vmapped.shape == (2, 4, 8), f'{vmapped.shape}'
+assert jnp.allclose(vmapped, {fn}(q, k, v), atol=1e-5), (
+    'vmap over the batch disagrees with the batched call — your code probably '
+    'assumes a fixed number of leading axes'
+)
+""",
+        },
+    ],
+}

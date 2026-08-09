@@ -7,7 +7,7 @@ import { NotebookActions } from '@jupyterlab/notebook';
 import { Dialog, showDialog, ToolbarButton } from '@jupyterlab/apputils';
 import { LabIcon, refreshIcon } from '@jupyterlab/ui-components';
 
-const GITHUB_REPO = 'duoan/TorchCode';
+const GITHUB_REPO = 'YOUR-GITHUB-USERNAME/JAXCode';
 const GITHUB_BRANCH = 'master';
 const TEMPLATES_BACKUP = '_original_templates';
 
@@ -213,7 +213,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
         }
         await runExistingOrInsert(
           current,
-          `from torch_judge import check\ncheck("${taskId}")`,
+          `from jax_judge import check\ncheck("${taskId}")`,
           `check("${taskId}")`
         );
       }
@@ -238,7 +238,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
         }
         await runExistingOrInsert(
           current,
-          `from torch_judge import hint\nhint("${taskId}")`,
+          `from jax_judge import hint\nhint("${taskId}")`,
           `hint("${taskId}")`
         );
       }
@@ -253,7 +253,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
         if (!current) return;
         await runExistingOrInsert(
           current,
-          'from torch_judge import status\nstatus()',
+          'from jax_judge import status\nstatus()',
           'status()'
         );
       }

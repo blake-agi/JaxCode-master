@@ -78,6 +78,13 @@ The classic follow-up: *why is the mean-of-means correct here, and when does it
 break?* (It breaks the moment shards have different row counts — then you need
 `psum` of sums and `psum` of counts.)
 """,
+    # Runs before the jax import in the generated notebook — XLA reads this flag
+    # once, at initialisation.
+    "notebook_setup": '''import os
+
+# Fake 8 devices on a single CPU so the mesh has something to shard across.
+# MUST run before jax is imported for the first time.
+os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=8"''',
     "stub": '''import jax
 import jax.numpy as jnp
 from jax.sharding import PartitionSpec as P

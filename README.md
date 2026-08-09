@@ -1,465 +1,289 @@
----
-title: TorchCode
-emoji: 🔥
-colorFrom: red
-colorTo: yellow
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 <div align="center">
 
-# 🔥 TorchCode
+# ⚡ JAXCode
 
-**Crack the PyTorch interview.**
+**Crack the JAX interview.**
 
-Practice implementing operators and architectures from scratch — the exact skills top ML teams test for.
+Implement operators, layers, and training machinery from scratch — in JAX and Flax NNX.
 
 *An interactive coding platform, but for tensors. Self-hosted. Jupyter-based. Instant feedback.*
 
-[![PyTorch](https://img.shields.io/badge/PyTorch-ee4c2c?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org)
+[![JAX](https://img.shields.io/badge/JAX-0.10-blue?style=for-the-badge)](https://docs.jax.dev)
+[![Flax NNX](https://img.shields.io/badge/Flax-NNX-4c8bf5?style=for-the-badge)](https://flax.readthedocs.io)
 [![Jupyter](https://img.shields.io/badge/Jupyter-F37626?style=for-the-badge&logo=jupyter&logoColor=white)](https://jupyter.org)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com)
 [![Python](https://img.shields.io/badge/Python_3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 
-[![GitHub stars](https://img.shields.io/github/stars/duoan/TorchCode?style=social)](https://github.com/duoan/TorchCode)
-[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-TorchCode-blue?style=flat-square&logo=github)](https://ghcr.io/duoan/torchcode)
-[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Spaces-TorchCode-blue?style=flat-square)](https://huggingface.co/spaces/duoan/TorchCode)
-![Problems](https://img.shields.io/badge/problems-41-orange?style=flat-square)
 ![GPU](https://img.shields.io/badge/GPU-not%20required-brightgreen?style=flat-square)
-
-[![Star History Chart](https://api.star-history.com/svg?repos=duoan/TorchCode&type=Date)](https://star-history.com/#duoan/TorchCode&Date)
 
 </div>
 
 ---
 
-## 🎯 Why TorchCode?
+## 🎯 Why JAXCode
 
-Top companies (Meta, Google DeepMind, OpenAI, etc.) expect ML engineers to implement core operations **from memory on a whiteboard**. Reading papers isn't enough — you need to write `softmax`, `LayerNorm`, `MultiHeadAttention`, and full Transformer blocks code.
+JAX interviews are not PyTorch interviews with different syntax. They test a
+different set of reflexes:
 
-TorchCode gives you a **structured practice environment** with:
+- Can you write the **single-example** function and let `vmap` add the batch axis?
+- Do you know why `axis` must be **static** under `jit` but the array must not be?
+- Can you express a recurrence as `lax.scan` instead of a Python loop that
+  unrolls into a 10,000-node graph?
+- Do you understand that a `while_loop` **cannot** be reverse-mode differentiated?
+- When autodiff produces `NaN` on a mathematically fine function, can you reach
+  for `custom_vjp` and hand it the analytic gradient?
+
+JAXCode gives you a graded environment for exactly those reflexes, plus the
+standard ML-implementation canon (attention, normalization, optimizers, RLHF
+losses) written the way JAX actually wants them.
 
 | | Feature | |
 |---|---|---|
-| 🧩 | **41 curated problems** | The most frequently asked PyTorch interview topics |
-| ⚖️ | **Automated judge** | Correctness checks, gradient verification, and timing |
-| 🎨 | **Instant feedback** | Colored pass/fail per test case, just like competitive programming |
-| 💡 | **Hints when stuck** | Nudges without full spoilers |
-| 📖 | **Reference solutions** | Study optimal implementations after your attempt |
-| 📊 | **Progress tracking** | What you've solved, best times, and attempt counts |
-| 🔄 | **One-click reset** | Toolbar button to reset any notebook back to its blank template — practice the same problem as many times as you want |
-| [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](#) | **Open in Colab** | Every notebook has an "Open in Colab" badge + toolbar button — run problems in Google Colab with zero setup |
+| 🧩 | **Curated problems** | JAX fundamentals first, then the ML canon |
+| ⚖️ | **Real judge** | Every problem ships a test suite: correctness, edge cases, gradients, `jit`/`vmap` |
+| 🎨 | **Instant feedback** | Colored pass/fail per test, like competitive programming |
+| 💡 | **Hints, then solutions** | `hint()` nudges; `solution()` shows the reference |
+| 📊 | **Progress tracking** | Dashboard of solved / attempted / todo by category |
+| 🧪 | **Self-verifying** | Every reference solution is CI-checked against its own tests |
+| 🔥 | **Flax NNX** | Layers are real `nnx.Module`s — mutable state, `nnx.Param`, `nnx.BatchStat` |
 
-No cloud. No signup. No GPU needed. Just `make run` — or try it instantly on Hugging Face.
+No cloud. No signup. No GPU needed.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
-### Option 0 — Try it online (zero install)
+### Option 1 — Google Colab (zero install)
 
-**[Launch on Hugging Face Spaces](https://huggingface.co/spaces/duoan/TorchCode)** — opens a full JupyterLab environment in your browser. Nothing to install.
-
-Or open any problem directly in Google Colab — every notebook has an [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/01_relu.ipynb) badge.
-
-### Option 0b — Use the judge in Colab (pip)
-
-In Google Colab, install the judge from PyPI so you can run `check(...)` without cloning the repo:
+Every notebook carries an *Open in Colab* badge. In Colab, install the judge:
 
 ```bash
-!pip install torch-judge
+!pip install jax-judge flax
 ```
 
-Then in a notebook cell:
+Then in a cell:
 
 ```python
-from torch_judge import check, status, hint, reset_progress
-status()           # list all problems and your progress
-check("relu")      # run tests for the "relu" task
-hint("relu")       # show a hint
+from jax_judge import check, hint, solution, status
+
+status()             # dashboard of every problem
+check("relu")        # grade your implementation
+hint("relu")         # a nudge, not the answer
+solution("relu")     # spoiler: the reference implementation
 ```
 
-### Option 1 — Pull the pre-built image (fastest)
+> The Colab badges are built from `JAXCODE_REPO`. After you push this to your own
+> GitHub, regenerate them so the links resolve:
+> ```bash
+> JAXCODE_REPO="you/JAXCode" make notebooks
+> ```
 
-```bash
-docker run -p 8888:8888 -e PORT=8888 ghcr.io/duoan/torchcode:latest
-```
-
-If the registry image is unavailable for your platform, use Option 2 instead. This is the common path on Apple Silicon / `arm64`.
-
-### Option 2 — Build locally
+### Option 2 — Docker (full JupyterLab)
 
 ```bash
 make run
 ```
 
-`make run` will try the prebuilt image first and automatically fall back to a local build when needed.
-
-Open **<http://localhost:8888>** — that's it. Works with both Docker and Podman (auto-detected).
-
-### Option 3 — Standalone Web UI (Next.js + FastAPI)
-
-For a modern, standalone coding experience with an integrated IDE and dual-pane layout:
-
-1. **Start Backend (FastAPI):**
-   ```bash
-   pip install -r api/requirements.txt
-   python -m uvicorn api.main:app --port 8000 --reload
-   ```
-2. **Start Frontend (Next.js):**
-   ```bash
-   cd web
-   npm install
-   npm run dev
-   ```
-3. Open **<http://localhost:3000>** in your browser.
-
-![TorchCode UI Preview](assets/ui_preview.png)
-
----
-
-## 📋 Problem Set
-
-> **Frequency**: 🔥 = very likely in interviews, ⭐ = commonly asked, 💡 = emerging / differentiator
-
-### 🧱 Fundamentals — "Implement X from scratch"
-
-The bread and butter of ML coding interviews. You'll be asked to write these without `torch.nn`.
-
-| # | Problem | What You'll Implement | Difficulty | Freq | Key Concepts |
-|:---:|---------|----------------------|:----------:|:----:|--------------|
-| 1 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/01_relu.ipynb" target="_blank">ReLU</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/01_relu.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `relu(x)` | ![Easy](https://img.shields.io/badge/Easy-4CAF50?style=flat-square) | 🔥 | Activation functions, element-wise ops |
-| 2 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/02_softmax.ipynb" target="_blank">Softmax</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/02_softmax.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `my_softmax(x, dim)` | ![Easy](https://img.shields.io/badge/Easy-4CAF50?style=flat-square) | 🔥 | Numerical stability, exp/log tricks |
-| 16 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/16_cross_entropy.ipynb" target="_blank">Cross-Entropy Loss</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/16_cross_entropy.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `cross_entropy_loss(logits, targets)` | ![Easy](https://img.shields.io/badge/Easy-4CAF50?style=flat-square) | 🔥 | Log-softmax, logsumexp trick |
-| 17 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/17_dropout.ipynb" target="_blank">Dropout</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/17_dropout.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `MyDropout` (nn.Module) | ![Easy](https://img.shields.io/badge/Easy-4CAF50?style=flat-square) | 🔥 | Train/eval mode, inverted scaling |
-| 18 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/18_embedding.ipynb" target="_blank">Embedding</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/18_embedding.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `MyEmbedding` (nn.Module) | ![Easy](https://img.shields.io/badge/Easy-4CAF50?style=flat-square) | 🔥 | Lookup table, `weight[indices]` |
-| 19 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/19_gelu.ipynb" target="_blank">GELU</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/19_gelu.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `my_gelu(x)` | ![Easy](https://img.shields.io/badge/Easy-4CAF50?style=flat-square) | ⭐ | Gaussian error linear unit, `torch.erf` |
-| 20 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/20_weight_init.ipynb" target="_blank">Kaiming Init</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/20_weight_init.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `kaiming_init(weight)` | ![Easy](https://img.shields.io/badge/Easy-4CAF50?style=flat-square) | ⭐ | `std = sqrt(2/fan_in)`, variance scaling |
-| 21 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/21_gradient_clipping.ipynb" target="_blank">Gradient Clipping</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/21_gradient_clipping.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `clip_grad_norm(params, max_norm)` | ![Easy](https://img.shields.io/badge/Easy-4CAF50?style=flat-square) | ⭐ | Norm-based clipping, direction preservation |
-| 31 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/31_gradient_accumulation.ipynb" target="_blank">Gradient Accumulation</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/31_gradient_accumulation.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `accumulated_step(model, opt, ...)` | ![Easy](https://img.shields.io/badge/Easy-4CAF50?style=flat-square) | 💡 | Micro-batching, loss scaling |
-| 40 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/40_linear_regression.ipynb" target="_blank">Linear Regression</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/40_linear_regression.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `LinearRegression` (3 methods) | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | 🔥 | Normal equation, GD from scratch, nn.Linear |
-| 3 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/03_linear.ipynb" target="_blank">Linear Layer</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/03_linear.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `SimpleLinear` (nn.Module) | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | 🔥 | `y = xW^T + b`, Kaiming init, `nn.Parameter` |
-| 4 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/04_layernorm.ipynb" target="_blank">LayerNorm</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/04_layernorm.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `my_layer_norm(x, γ, β)` | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | 🔥 | Normalization, running stats, affine transform |
-| 7 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/07_batchnorm.ipynb" target="_blank">BatchNorm</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/07_batchnorm.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `my_batch_norm(x, γ, β)` | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | ⭐ | Batch vs layer statistics, train/eval behavior |
-| 8 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/08_rmsnorm.ipynb" target="_blank">RMSNorm</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/08_rmsnorm.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `rms_norm(x, weight)` | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | ⭐ | LLaMA-style norm, simpler than LayerNorm |
-| 15 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/15_mlp.ipynb" target="_blank">SwiGLU MLP</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/15_mlp.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `SwiGLUMLP` (nn.Module) | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | ⭐ | Gated FFN, `SiLU(gate) * up`, LLaMA/Mistral-style |
-| 22 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/22_conv2d.ipynb" target="_blank">Conv2d</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/22_conv2d.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `my_conv2d(x, weight, ...)` | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | 🔥 | Convolution, unfold, stride/padding |
-
-### 🧠 Attention Mechanisms — The heart of modern ML interviews
-
-If you're interviewing for any role touching LLMs or Transformers, expect at least one of these.
-
-| # | Problem | What You'll Implement | Difficulty | Freq | Key Concepts |
-|:---:|---------|----------------------|:----------:|:----:|--------------|
-| 23 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/23_cross_attention.ipynb" target="_blank">Cross-Attention</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/23_cross_attention.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `MultiHeadCrossAttention` (nn.Module) | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | ⭐ | Encoder-decoder, Q from decoder, K/V from encoder |
-| 5 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/05_attention.ipynb" target="_blank">Scaled Dot-Product Attention</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/05_attention.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `scaled_dot_product_attention(Q, K, V)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 🔥 | `softmax(QK^T/√d_k)V`, the foundation of everything |
-| 6 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/06_multihead_attention.ipynb" target="_blank">Multi-Head Attention</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/06_multihead_attention.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `MultiHeadAttention` (nn.Module) | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 🔥 | Parallel heads, split/concat, projection matrices |
-| 9 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/09_causal_attention.ipynb" target="_blank">Causal Self-Attention</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/09_causal_attention.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `causal_attention(Q, K, V)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 🔥 | Autoregressive masking with `-inf`, GPT-style |
-| 10 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/10_gqa.ipynb" target="_blank">Grouped Query Attention</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/10_gqa.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `GroupQueryAttention` (nn.Module) | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | ⭐ | GQA (LLaMA 2), KV sharing across heads |
-| 11 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/11_sliding_window.ipynb" target="_blank">Sliding Window Attention</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/11_sliding_window.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `sliding_window_attention(Q, K, V, w)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | ⭐ | Mistral-style local attention, O(n·w) complexity |
-| 12 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/12_linear_attention.ipynb" target="_blank">Linear Attention</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/12_linear_attention.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `linear_attention(Q, K, V)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 💡 | Kernel trick, `φ(Q)(φ(K)^TV)`, O(n·d²) |
-| 14 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/14_kv_cache.ipynb" target="_blank">KV Cache Attention</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/14_kv_cache.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `KVCacheAttention` (nn.Module) | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 🔥 | Incremental decoding, cache K/V, prefill vs decode |
-| 24 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/24_rope.ipynb" target="_blank">RoPE</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/24_rope.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `apply_rope(q, k)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 🔥 | Rotary position embedding, relative position via rotation |
-| 25 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/25_flash_attention.ipynb" target="_blank">Flash Attention</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/25_flash_attention.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `flash_attention(Q, K, V, block_size)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 💡 | Tiled attention, online softmax, memory-efficient |
-
-### 🏗️ Architecture & Adaptation — Put it all together
-
-| # | Problem | What You'll Implement | Difficulty | Freq | Key Concepts |
-|:---:|---------|----------------------|:----------:|:----:|--------------|
-| 26 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/26_lora.ipynb" target="_blank">LoRA</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/26_lora.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `LoRALinear` (nn.Module) | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | ⭐ | Low-rank adaptation, frozen base + `BA` update |
-| 27 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/27_vit_patch.ipynb" target="_blank">ViT Patch Embedding</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/27_vit_patch.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `PatchEmbedding` (nn.Module) | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | 💡 | Image → patches → linear projection |
-| 13 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/13_gpt2_block.ipynb" target="_blank">GPT-2 Block</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/13_gpt2_block.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `GPT2Block` (nn.Module) | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | ⭐ | Pre-norm, causal MHA + MLP (4x, GELU), residual connections |
-| 28 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/28_moe.ipynb" target="_blank">Mixture of Experts</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/28_moe.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `MixtureOfExperts` (nn.Module) | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | ⭐ | Mixtral-style, top-k routing, expert MLPs |
-
-### ⚙️ Training & Optimization
-
-| # | Problem | What You'll Implement | Difficulty | Freq | Key Concepts |
-|:---:|---------|----------------------|:----------:|:----:|--------------|
-| 29 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/29_adam.ipynb" target="_blank">Adam Optimizer</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/29_adam.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `MyAdam` | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | ⭐ | Momentum + RMSProp, bias correction |
-| 30 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/30_cosine_lr.ipynb" target="_blank">Cosine LR Scheduler</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/30_cosine_lr.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `cosine_lr_schedule(step, ...)` | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | ⭐ | Linear warmup + cosine annealing |
-
-### 🎯 Inference & Decoding
-
-| # | Problem | What You'll Implement | Difficulty | Freq | Key Concepts |
-|:---:|---------|----------------------|:----------:|:----:|--------------|
-| 32 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/32_topk_sampling.ipynb" target="_blank">Top-k / Top-p Sampling</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/32_topk_sampling.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `sample_top_k_top_p(logits, ...)` | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | 🔥 | Nucleus sampling, temperature scaling |
-| 33 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/33_beam_search.ipynb" target="_blank">Beam Search</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/33_beam_search.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `beam_search(log_prob_fn, ...)` | ![Medium](https://img.shields.io/badge/Medium-FF9800?style=flat-square) | 🔥 | Hypothesis expansion, pruning, eos handling |
-| 34 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/34_speculative_decoding.ipynb" target="_blank">Speculative Decoding</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/34_speculative_decoding.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `speculative_decode(target, draft, ...)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 💡 | Accept/reject, draft model acceleration |
-
-### 🔬 Advanced — Differentiators
-
-| # | Problem | What You'll Implement | Difficulty | Freq | Key Concepts |
-|:---:|---------|----------------------|:----------:|:----:|--------------|
-| 35 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/35_bpe.ipynb" target="_blank">BPE Tokenizer</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/35_bpe.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `SimpleBPE` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 💡 | Byte-pair encoding, merge rules, subword splits |
-| 36 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/36_int8_quantization.ipynb" target="_blank">INT8 Quantization</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/36_int8_quantization.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `Int8Linear` (nn.Module) | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 💡 | Per-channel quantize, scale/zero-point, buffer vs param |
-| 37 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/37_dpo_loss.ipynb" target="_blank">DPO Loss</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/37_dpo_loss.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `dpo_loss(chosen, rejected, ...)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 💡 | Direct preference optimization, alignment training |
-| 38 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/38_grpo_loss.ipynb" target="_blank">GRPO Loss</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/38_grpo_loss.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `grpo_loss(logps, rewards, group_ids, eps)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 💡 | Group relative policy optimization, RLAIF, within-group normalized advantages |
-| 39 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/39_ppo_loss.ipynb" target="_blank">PPO Loss</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/39_ppo_loss.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `ppo_loss(new_logps, old_logps, advantages, clip_ratio)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 💡 | PPO clipped surrogate loss, policy gradient, trust region |
-| 41 | <a href="https://github.com/duoan/TorchCode/blob/master/templates/41_opd_loss.ipynb" target="_blank">OPD Loss</a> <a href="https://colab.research.google.com/github/duoan/TorchCode/blob/master/templates/41_opd_loss.ipynb" target="_blank"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" height="20"></a> | `opd_loss(student_logits, teacher_logits, ...)` | ![Hard](https://img.shields.io/badge/Hard-F44336?style=flat-square) | 💡 | On-policy distillation, reverse KL, multi-teacher alignment |
-
----
-
-## ⚙️ How It Works
-
-Each problem has **two** notebooks:
-
-| File | Purpose |
-|------|---------|
-| `01_relu.ipynb` | ✏️ Blank template — write your code here |
-| `01_relu_solution.ipynb` | 📖 Reference solution — check when stuck |
-
-### Workflow
-
-```text
-1. Open a blank notebook           →  Read the problem description
-2. Implement your solution         →  Use only basic PyTorch ops
-3. Debug freely                    →  print(x.shape), check gradients, etc.
-4. Run the judge cell              →  check("relu")
-5. See instant colored feedback    →  ✅ pass / ❌ fail per test case
-6. Stuck? Get a nudge              →  hint("relu")
-7. Review the reference solution   →  01_relu_solution.ipynb
-8. Click 🔄 Reset in the toolbar  →  Blank slate — practice again!
-```
-
-### In-Notebook API
-
-```python
-from torch_judge import check, hint, status
-
-check("relu")               # Judge your implementation
-hint("causal_attention")    # Get a hint without full spoiler
-status()                    # Progress dashboard — solved / attempted / todo
-```
-
----
-
-## 📅 Suggested Study Plan
-
-> **Total: ~12–16 hours spread across 3–4 weeks. Perfect for interview prep on a deadline.**
-
-| Week | Focus | Problems | Time |
-|:----:|-------|----------|:----:|
-| **1** | 🧱 Foundations | ReLU → Softmax → CE Loss → Dropout → Embedding → GELU → Linear → LayerNorm → BatchNorm → RMSNorm → SwiGLU MLP → Conv2d | 2–3 hrs |
-| **2** | 🧠 Attention Deep Dive | SDPA → MHA → Cross-Attn → Causal → GQA → KV Cache → Sliding Window → RoPE → Linear Attn → Flash Attn | 3–4 hrs |
-| **3** | 🏗️ Architecture + Training | GPT-2 Block → LoRA → MoE → ViT Patch → Adam → Cosine LR → Grad Clip → Grad Accumulation → Kaiming Init | 3–4 hrs |
-| **4** | 🎯 Inference + Advanced | Top-k/p Sampling → Beam Search → Speculative Decoding → BPE → INT8 Quant → DPO Loss → GRPO Loss → PPO Loss → OPD Loss + speed run | 3–4 hrs |
-
----
-
-## 🏛️ Architecture
-
-```text
-┌──────────────────────────────────────────┐
-│           Docker / Podman Container      │
-│                                          │
-│  JupyterLab (:8888)                      │
-│    ├── templates/  (reset on each run)   │
-│    ├── solutions/  (reference impl)      │
-│    ├── torch_judge/ (auto-grading)       │
-│    ├── torchcode-labext (JLab plugin)    │
-│    │     🔄 Reset — restore template     │
-│    │     🔗 Colab — open in Colab        │
-│    └── PyTorch (CPU), NumPy              │
-│                                          │
-│  Judge checks:                           │
-│    ✓ Output correctness (allclose)       │
-│    ✓ Gradient flow (autograd)            │
-│    ✓ Shape consistency                   │
-│    ✓ Edge cases & numerical stability    │
-└──────────────────────────────────────────┘
-```
-
-Single container. Single port. No database. No frontend framework. No GPU.
-
-## 🛠️ Commands
+Opens JupyterLab at **http://localhost:8888** with every notebook preloaded and
+progress persisted to `./data/progress.json`.
 
 ```bash
-make run    # Build & start (http://localhost:8888)
-make stop   # Stop the container
-make clean  # Stop + remove volumes + reset all progress
+make stop     # stop it
+make clean    # stop, drop volumes, wipe progress
 ```
 
-## 🧩 Adding Your Own Problems
+### Option 3 — Local virtualenv
 
-TorchCode uses auto-discovery — just drop a new file in `torch_judge/tasks/`:
+```bash
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]" jupyterlab
+make setup-local
+jupyter lab notebooks/
+```
+
+---
+
+## 🧠 How it works
+
+Each problem is a notebook with a blank implementation cell and a submit cell:
+
+```python
+# ✏️ YOUR IMPLEMENTATION HERE
+def my_softmax(x, axis=-1):
+    pass
+
+# ✅ SUBMIT
+from jax_judge import check
+check("softmax")
+```
+
+The judge pulls your function out of the notebook namespace and runs the real
+test suite against it:
+
+```
+🧪 Testing: Implement Softmax (Easy)
+────────────────────────────────────────────────────────
+  ✅ [1/6] Basic 1-D (12.3ms)
+  ✅ [2/6] 2-D along the last axis (8.1ms)
+  ❌ [3/6] Numerical stability on large inputs
+     NaN in output: [nan nan nan] — subtract the max along the axis before exp()
+  ...
+────────────────────────────────────────────────────────
+  📊 5/6 tests passed.
+```
+
+Tests are written to catch the *specific* bug and say so, rather than just
+reporting a diff.
+
+---
+
+## 📚 Problems
+
+<!-- PROBLEMS:START -->
+**27 problems** — 🟢 12 Easy · 🟡 13 Medium · 🔴 2 Hard
+
+
+### JAX Fundamentals (11)
+
+| # | Problem | Difficulty | `task_id` |
+|---|---|---|---|
+| 01 | [SGD Step with value_and_grad](templates/01_grad_basics.ipynb) | 🟢 Easy | `grad_basics` |
+| 02 | [Pairwise Distances with vmap](templates/02_vmap_batching.ipynb) | 🟢 Easy | `vmap_batching` |
+| 03 | [jit with static_argnames](templates/03_jit_static.ipynb) | 🟢 Easy | `jit_static` |
+| 04 | [Stack a List of Pytrees](templates/04_pytree_ops.ipynb) | 🟡 Medium | `pytree_ops` |
+| 05 | [PRNG Keys and Splitting](templates/05_prng_keys.ipynb) | 🟢 Easy | `prng_keys` |
+| 06 | [Discounted Returns with lax.scan](templates/06_lax_scan.ipynb) | 🟡 Medium | `lax_scan` |
+| 07 | [Newton's Method with lax.while_loop](templates/07_lax_control_flow.ipynb) | 🟡 Medium | `lax_control_flow` |
+| 08 | [Stable log(1+exp(x)) with custom_vjp](templates/08_custom_vjp.ipynb) | 🔴 Hard | `custom_vjp` |
+| 09 | [Hessian with jacfwd(jacrev(f))](templates/09_higher_order_grad.ipynb) | 🟡 Medium | `higher_order_grad` |
+| 10 | [Gradient Checkpointing with jax.checkpoint](templates/10_remat_checkpoint.ipynb) | 🟡 Medium | `remat_checkpoint` |
+| 11 | [Data-Parallel Mean with shard_map](templates/11_sharding_basics.ipynb) | 🔴 Hard | `sharding_basics` |
+
+### Core Ops & Layers (11)
+
+| # | Problem | Difficulty | `task_id` |
+|---|---|---|---|
+| 12 | [Implement ReLU](templates/12_relu.ipynb) | 🟢 Easy | `relu` |
+| 13 | [Implement GELU (exact and tanh)](templates/13_gelu.ipynb) | 🟢 Easy | `gelu` |
+| 14 | [Implement Softmax](templates/14_softmax.ipynb) | 🟢 Easy | `softmax` |
+| 15 | [Linear Layer (nnx.Module)](templates/15_linear.ipynb) | 🟢 Easy | `linear` |
+| 16 | [LayerNorm (nnx.Module)](templates/16_layernorm.ipynb) | 🟢 Easy | `layernorm` |
+| 17 | [RMSNorm (nnx.Module)](templates/17_rmsnorm.ipynb) | 🟢 Easy | `rmsnorm` |
+| 18 | [BatchNorm with Running Stats (nnx.Module)](templates/18_batchnorm.ipynb) | 🟡 Medium | `batchnorm` |
+| 19 | [Inverted Dropout (nnx.Module)](templates/19_dropout.ipynb) | 🟡 Medium | `dropout` |
+| 20 | [Embedding Lookup (nnx.Module)](templates/20_embedding.ipynb) | 🟢 Easy | `embedding` |
+| 21 | [Two-Layer MLP (nnx.Module)](templates/21_mlp.ipynb) | 🟢 Easy | `mlp` |
+| 22 | [Xavier and He Initialisation](templates/22_weight_init.ipynb) | 🟡 Medium | `weight_init` |
+
+### Attention & Transformers (3)
+
+| # | Problem | Difficulty | `task_id` |
+|---|---|---|---|
+| 23 | [Scaled Dot-Product Attention](templates/23_attention.ipynb) | 🟡 Medium | `attention` |
+| 24 | [Multi-Head Attention (nnx.Module)](templates/24_mha.ipynb) | 🟡 Medium | `mha` |
+| 25 | [Rotary Position Embeddings (RoPE)](templates/25_rope.ipynb) | 🟡 Medium | `rope` |
+
+### Training (2)
+
+| # | Problem | Difficulty | `task_id` |
+|---|---|---|---|
+| 26 | [Global-Norm Gradient Clipping](templates/26_gradient_clipping.ipynb) | 🟡 Medium | `gradient_clipping` |
+| 27 | [Gradient Accumulation](templates/27_gradient_accumulation.ipynb) | 🟡 Medium | `gradient_accumulation` |
+<!-- PROBLEMS:END -->
+
+---
+
+## 🗺️ Suggested route
+
+**Do the JAX Fundamentals first**, even if you know the ML content cold. Every
+later problem assumes fluency with `vmap`, `scan`, pytrees, and explicit PRNG
+keys — and those are what a JAX-specific interview actually probes. The ML
+problems are where you demonstrate that you can express known algorithms
+*functionally*.
+
+After that, follow the categories in order, or jump to whatever your interview
+targets.
+
+---
+
+## 🏗️ Repo layout
+
+```
+jax_judge/
+  engine.py           check() / hint() / solution() — framework-agnostic runner
+  progress.py         solved/attempted tracking + status() dashboard
+  tasks/
+    _registry.py      auto-discovers task modules, defines curriculum order
+    <task_id>.py      ONE TASK dict: description, stub, solution, tests
+templates/            generated — blank practice notebooks
+solutions/            generated — reference solution notebooks
+scripts/
+  generate_notebooks.py   renders templates/ + solutions/ from tasks
+  verify_tasks.py         runs each reference solution against its own tests
+  smoke_notebooks.py      executes notebooks in a real kernel
+```
+
+**The task files are the single source of truth.** Notebooks are generated
+artifacts — never edit them by hand, your changes will be overwritten.
+
+---
+
+## ➕ Adding a problem
+
+Create `jax_judge/tasks/my_task.py`:
 
 ```python
 TASK = {
-    "id": "my_task",
-    "title": "My Custom Problem",
-    "difficulty": "medium",
-    "function_name": "my_function",
-    "hint": "Think about broadcasting...",
-    "tests": [ ... ],
+    "title": "My Problem",
+    "category": "Core Ops & Layers",   # must match _registry.CATEGORIES
+    "order": 13,                        # position within the category
+    "difficulty": "Medium",             # Easy | Medium | Hard
+    "function_name": "my_fn",           # symbol the judge looks for
+    "hint": "Name the API and the shape trick, without giving the answer.",
+    "description": "Markdown problem statement — this becomes the notebook.",
+    "stub": "def my_fn(x):\n    pass",
+    "solution": "def my_fn(x):\n    return x * 2",
+    "demo": "print(my_fn(jnp.arange(3)))",   # optional scratch cell
+    "tests": [
+        {"name": "Basic", "code": "import jax.numpy as jnp\nassert {fn}(2) == 4"},
+    ],
 }
 ```
 
-No registration needed. The judge picks it up automatically.
+`{fn}` is replaced with `function_name` before the test runs. The registry
+auto-discovers the module — no imports to register.
 
----
-
-## 📦 Publishing `torch-judge` to PyPI (maintainers)
-
-The judge is published as a separate package so Colab/users can `pip install torch-judge` without cloning the repo.
-
-### Automatic (GitHub Action)
-
-Pushing to `master` after changing the package version triggers [`.github/workflows/pypi-publish.yml`](.github/workflows/pypi-publish.yml), which builds and uploads to PyPI. No git tag is required.
-
-1. **Bump version** in `torch_judge/_version.py` (e.g. `__version__ = "0.1.1"`).
-2. **Configure PyPI Trusted Publisher** (one-time):
-   - PyPI → Your project **torch-judge** → **Publishing** → **Add a new pending publisher**
-   - Owner: `duoan`, Repository: `TorchCode`, Workflow: `pypi-publish.yml`, Environment: (leave empty)
-   - Run the workflow once (push a version bump to `master` or **Actions → Publish torch-judge to PyPI → Run workflow**); PyPI will then link the publisher.
-3. **Release**: commit the version bump and `git push origin master`.
-
-Alternatively, use an API token: add repository secret `PYPI_API_TOKEN` (value = `pypi-...` from PyPI) and set `TWINE_USERNAME=__token__` and `TWINE_PASSWORD` from that secret in the workflow if you prefer not to use Trusted Publishing.
-
-### Manual
+Then:
 
 ```bash
-pip install build twine
-python -m build
-twine upload dist/*
+make verify      # your reference solution must pass your own tests
+make notebooks   # regenerate the notebooks
 ```
 
-Version is in `torch_judge/_version.py`; bump it before each release.
+Gotcha: each test snippet is standalone and must do its own imports.
+`import jax.numpy as jnp` does **not** bind the name `jax` — if you use
+`jax.grad`, import `jax` too.
 
 ---
 
-## ❓ FAQ
+## 🧰 Development
 
-<details>
-<summary><b>Do I need a GPU?</b></summary>
-<br>
-No. Everything runs on CPU. The problems test correctness and understanding, not throughput.
-</details>
+```bash
+make verify      # every reference solution vs its own tests
+make notebooks   # regenerate all notebooks from task definitions
+make smoke       # execute solution notebooks in a real Jupyter kernel
+make check       # verify + assert notebooks are not stale (CI)
+```
 
-<details>
-<summary><b>Can I keep my solutions between runs?</b></summary>
-<br>
-Blank templates reset on every <code>make run</code> so you practice from scratch. Save your work under a different filename if you want to keep it. You can also click the <b>🔄 Reset</b> button in the notebook toolbar at any time to restore the blank template without restarting.
-</details>
-
-<details>
-<summary><b>Can I use Google Colab instead?</b></summary>
-<br>
-Yes! Every notebook has an <b>Open in Colab</b> badge at the top. Click it to open the problem directly in Google Colab — no Docker or local setup needed. You can also use the <b>Colab</b> toolbar button inside JupyterLab.
-</details>
-
-<details>
-<summary><b>How are solutions graded?</b></summary>
-<br>
-The judge runs your function against multiple test cases using <code>torch.allclose</code> for numerical correctness, verifies gradients flow properly via autograd, and checks edge cases specific to each operation.
-</details>
-
-<details>
-<summary><b>Who is this for?</b></summary>
-<br>
-Anyone preparing for ML/AI engineering interviews at top tech companies, or anyone who wants to deeply understand how PyTorch operations work under the hood.
-</details>
+`make verify` is the important one. A task whose own published solution fails
+its own tests is worse than no task at all, so it runs on every change.
 
 ---
 
-## 🤝 Contributors
+## 📄 License
 
-Thanks to everyone who has contributed to TorchCode.
+MIT.
 
-<!-- readme: contributors -start -->
-<table>
-	<tbody>
-		<tr>
-            <td align="center">
-                <a href="https://github.com/duoan">
-                    <img src="https://avatars.githubusercontent.com/u/2378740?v=4" width="100;" alt="duoan"/>
-                    <br />
-                    <sub><b>duoan</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/Ando233">
-                    <img src="https://avatars.githubusercontent.com/u/74404658?v=4" width="100;" alt="Ando233"/>
-                    <br />
-                    <sub><b>Ando233</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/abhijitmjj">
-                    <img src="https://avatars.githubusercontent.com/u/22732909?v=4" width="100;" alt="abhijitmjj"/>
-                    <br />
-                    <sub><b>abhijitmjj</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/laitifranz">
-                    <img src="https://avatars.githubusercontent.com/u/25352428?v=4" width="100;" alt="laitifranz"/>
-                    <br />
-                    <sub><b>laitifranz</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/hrlics">
-                    <img src="https://avatars.githubusercontent.com/u/90754112?v=4" width="100;" alt="hrlics"/>
-                    <br />
-                    <sub><b>hrlics</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/HareshKarnan">
-                    <img src="https://avatars.githubusercontent.com/u/5285984?v=4" width="100;" alt="HareshKarnan"/>
-                    <br />
-                    <sub><b>HareshKarnan</b></sub>
-                </a>
-            </td>
-		</tr>
-		<tr>
-            <td align="center">
-                <a href="https://github.com/ThierryHJ">
-                    <img src="https://avatars.githubusercontent.com/u/51846529?v=4" width="100;" alt="ThierryHJ"/>
-                    <br />
-                    <sub><b>ThierryHJ</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/Zuozhuo">
-                    <img src="https://avatars.githubusercontent.com/u/116483151?v=4" width="100;" alt="Zuozhuo"/>
-                    <br />
-                    <sub><b>Zuozhuo</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/reidemeister94">
-                    <img src="https://avatars.githubusercontent.com/u/28828348?v=4" width="100;" alt="reidemeister94"/>
-                    <br />
-                    <sub><b>reidemeister94</b></sub>
-                </a>
-            </td>
-		</tr>
-	<tbody>
-</table>
-<!-- readme: contributors -end -->
-
-Auto-generated from the [GitHub contributors graph](https://github.com/duoan/TorchCode/graphs/contributors) with avatars and GitHub usernames.
-
----
-
-<div align="center">
-
-**Built for engineers who want to deeply understand what they build.**
-
-If this helped your interview prep, consider giving it a ⭐
-
----
-
-### ☕ Buy Me a Coffee
-
-<a href="https://buymeacoffee.com/duoan" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
-
-<img src="./bmc_qr.png" alt="BMC QR Code" width="150" height="150">
-
-*Scan to support*
-
-</div>
+Adapted from [TorchCode](https://github.com/duoan/TorchCode) by duoan — same
+judge architecture and notebook workflow, rebuilt for JAX and Flax NNX with an
+added JAX-fundamentals track.

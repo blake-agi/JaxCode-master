@@ -1,6 +1,6 @@
 services:
-  torchcode:
-    image: ghcr.io/duoan/torchcode:latest
+  jaxcode:
+    image: jaxcode:latest
     build: .
     user: root
     ports:
@@ -9,6 +9,7 @@ services:
       - PORT=8888
     volumes:
       - ./notebooks:/app/notebooks
-      - ./torch_judge:/app/torch_judge
+      # Mounted so edits to the judge show up without rebuilding the image.
+      - ./jax_judge:/app/jax_judge
       - ./data:/app/data
     restart: unless-stopped

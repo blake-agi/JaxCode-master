@@ -22,9 +22,9 @@ FROM build-base AS judge-builder
 
 WORKDIR /src
 
-# Build torch_judge wheel.
+# Build the jax_judge wheel.
 COPY pyproject.toml setup.py README.md ./
-COPY torch_judge/ ./torch_judge/
+COPY jax_judge/ ./jax_judge/
 RUN python -m build --wheel --outdir /tmp/wheels .
 
 FROM build-base AS labext-builder
@@ -55,12 +55,12 @@ WORKDIR /app
 
 COPY --from=judge-builder /tmp/wheels /tmp/wheels
 COPY --from=labext-builder /tmp/wheels /tmp/wheels
-# torch >=2 treats NumPy as optional; without it `import torch` prints a
-# "Failed to initialize NumPy" warning and tensor<->numpy interop is disabled.
+# CPU-only JAX — the practice problems are all small and need no accelerator.
+# For GPU, swap in: pip install "jax[cuda12]"
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
-      torch --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir \
+      "jax>=0.4.30" \
+      "flax>=0.10" \
       numpy \
       /tmp/wheels/*.whl && \
     rm -rf /tmp/wheels
@@ -82,6 +82,8 @@ RUN mkdir -p /app/notebooks /app/data && \
 
 USER user
 
+# Keep XLA quiet and predictable on a CPU-only container.
+ENV JAX_PLATFORMS=cpu
 ENV PORT=7860
 EXPOSE 7860
 
