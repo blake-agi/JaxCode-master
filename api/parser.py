@@ -32,7 +32,7 @@ def parse_notebook_template(filepath: str) -> dict:
                 
                 # Check for the implementation placeholder
                 if "# ✏️ YOUR IMPLEMENTATION HERE" in source_str:
-                    initial_code = "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nimport math\n\n" + source_str
+                    initial_code = "import jax\nimport jax.numpy as jnp\nfrom flax import nnx\nimport math\n\n" + source_str
                     
         return {
             "description": description,
@@ -45,10 +45,8 @@ def parse_notebook_template(filepath: str) -> dict:
             "initial_code": "# Error loading template code."
         }
 
-# Template filenames whose stem doesn't match their torch_judge task module name
-TASK_ID_ALIASES = {
-    "multihead_attention": "mha",
-}
+# Template filenames whose stem doesn't match their jax_judge task module name
+TASK_ID_ALIASES = {}
 
 def get_all_templates(templates_dir: str = "../templates") -> dict:
     """

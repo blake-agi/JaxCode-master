@@ -43,7 +43,13 @@ def _outputs_text(nb) -> str:
     return ANSI.sub("", "\n".join(chunks))
 
 
-def run_notebook(path: Path, timeout: int = 600) -> tuple[bool, str]:
+def run_notebook(path: Path, timeout: int = 600, allow_errors: bool = False) -> tuple[bool, str]:
+    """Execute a notebook. Returns (ran_to_completion, all output text).
+
+    allow_errors keeps going past a raising cell. Blank templates need it: the
+    stub returns None, so the scratch cell legitimately blows up — but the
+    submit cell after it still has to reach the judge and print a verdict.
+    """
     nb = nbformat.read(path, as_version=4)
     # Progress writes go to a throwaway file so smoke runs never touch real data.
     with tempfile.TemporaryDirectory() as tmp:
@@ -52,7 +58,11 @@ def run_notebook(path: Path, timeout: int = 600) -> tuple[bool, str]:
         )
         nb.cells.insert(0, setup)
         client = NotebookClient(
-            nb, timeout=timeout, kernel_name="python3", resources={"metadata": {"path": str(ROOT)}}
+            nb,
+            timeout=timeout,
+            kernel_name="python3",
+            allow_errors=allow_errors,
+            resources={"metadata": {"path": str(ROOT)}},
         )
         try:
             client.execute()
@@ -81,7 +91,7 @@ def main() -> int:
     failures = 0
 
     for p in paths:
-        ok, text = run_notebook(p)
+        ok, text = run_notebook(p, allow_errors=args.templates)
 
         if not ok:
             failures += 1
@@ -90,13 +100,17 @@ def main() -> int:
             continue
 
         if args.templates:
-            # A blank stub SHOULD fail its tests — we only assert it ran and the
-            # judge produced a verdict rather than exploding.
-            if "tests passed" in text or "❌" in text or "💥" in text:
-                print(f"  {GREEN}✅ {p.name}{RESET} {DIM}(ran; judge reported a verdict){RESET}")
+            # A blank stub SHOULD fail its tests. What must hold is that the
+            # submit cell still reaches the judge and prints a real verdict,
+            # rather than the learner seeing only an opaque traceback.
+            verdict = "tests passed" in text or "Testing:" in text
+            if verdict:
+                print(f"  {GREEN}✅ {p.name}{RESET} {DIM}(judge reported a verdict){RESET}")
             else:
                 failures += 1
-                print(f"  {RED}❌ {p.name} — judge produced no verdict{RESET}")
+                print(f"  {RED}❌ {p.name} — submit cell never produced a judge verdict{RESET}")
+                tail = "\n".join(text.strip().split("\n")[-10:])
+                print(f"{DIM}{tail}{RESET}")
             continue
 
         if "All" in text and "tests passed" in text:

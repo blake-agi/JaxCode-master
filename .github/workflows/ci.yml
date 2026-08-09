@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify tasks and notebooks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Every reference solution must pass its own tests
+        run: python scripts/verify_tasks.py
+
+      - name: Notebooks must be in sync with the task definitions
+        run: python scripts/generate_notebooks.py --check
+
+  smoke:
+    name: Execute solution notebooks
+    runs-on: ubuntu-latest
+    # The full notebook sweep is slower than the unit-level verifier, so it only
+    # gates master rather than every push to a branch.
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run notebooks in a real kernel
+        run: python scripts/smoke_notebooks.py

@@ -338,10 +338,11 @@ lr = 0.1
 p_acc = jax.tree.map(lambda p, g: p - lr * g, params, acc_grads)
 p_ref = jax.tree.map(lambda p, g: p - lr * g, params, full_grads)
 
-for a, b, name in zip(jax.tree.leaves(p_acc), jax.tree.leaves(p_ref),
-                      jax.tree.leaves(jax.tree.map(lambda _: 0, params))):
+assert jax.tree.structure(p_acc) == jax.tree.structure(params), 'Structure changed'
+for a, b in zip(jax.tree.leaves(p_acc), jax.tree.leaves(p_ref)):
     assert jnp.allclose(a, b, atol=1e-6, rtol=1e-5), (
-        f'Post-update params diverge: {a} vs {b}'
+        f'Post-update params diverge: {a} vs {b}. One step on the accumulated '
+        'gradient must land exactly where one step on the full batch lands'
     )
 
 moved = jax.tree.map(lambda p, q: jnp.abs(p - q).sum(), params, p_acc)

@@ -13,8 +13,8 @@ TASK = {
         "scale = jnp.minimum(1.0, max_norm / (norm + 1e-6)) applied via "
         "jax.tree.map(lambda g: g * scale, grads). Do not write "
         "`if norm > max_norm:` — that is a Python branch on a traced value and "
-        "explodes under jit; the eps in the denominator is what stops 0/0 = NaN "
-        "when every gradient is zero."
+        "explodes under jit; the eps in the denominator is what stops "
+        "0 * (max_norm / 0) = NaN when every gradient is zero."
     ),
     "description": r"""
 Clip a gradient pytree by its **global** norm and return the rescaled pytree.
@@ -65,10 +65,19 @@ Two more consequences worth being able to say out loud:
 you `jit` it — the norm is a traced value with no concrete truth value. Use
 `jnp.minimum` (or `jnp.where`), which is branch-free and compiles to a select.
 
-And when every gradient is exactly zero — a fully masked batch, a frozen
-submodule, a dead ReLU block — the naive `max_norm / global_norm` is $0/0 =
-\text{NaN}$, which then poisons every parameter on the next update. The
-one-line fix is `max_norm / (global_norm + 1e-6)`.
+And every gradient can be exactly zero — a fully masked batch, a frozen
+submodule, a dead ReLU block. Then the direct
+`g * max_norm / global_norm` evaluates $0 \cdot \infty = \text{NaN}$ and poisons
+every parameter on the next update. Writing the factor as
+`jnp.minimum(1.0, max_norm / (global_norm + 1e-6))` fixes it twice over: the
+`minimum` selects the safe branch, and the epsilon keeps the quotient finite in
+the first place.
+
+That epsilon earns its keep in one more place. $\sqrt{\cdot}$ has an *infinite*
+derivative at zero, so `jax.grad` of `jnp.sqrt(jnp.sum(g ** 2))` at `g = 0`
+returns `NaN` — an unguarded norm is a landmine the moment clipping sits inside
+anything you differentiate through, which is exactly where it ends up in
+meta-learning and in differentiable-optimizer research code.
 """,
     "stub": '''import jax
 import jax.numpy as jnp

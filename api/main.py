@@ -4,11 +4,11 @@ from pydantic import BaseModel
 import sys
 import os
 
-# Add the root directory to PYTHONPATH so we can import torch_judge
+# Add the root directory to PYTHONPATH so we can import jax_judge
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from torch_judge.tasks import TASKS, get_task
-from torch_judge.web_engine import execute_code
+from jax_judge.tasks import TASKS, get_task
+from jax_judge.web_engine import execute_code
 from api.parser import get_all_templates
 
 app = FastAPI(title="TorchCode UI Backend")
