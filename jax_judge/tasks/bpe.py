@@ -6,6 +6,9 @@ TASK = {
     "order": 4,
     "difficulty": "Medium",
     "function_name": "train_bpe",
+    # The tests exercise both halves, so apply_merges must be pulled from the
+    # notebook namespace alongside train_bpe.
+    "extra_names": ["apply_merges"],
     "hint": (
         "Represent each word as a list of symbols and keep a {word: count} "
         "dict. Each round, tally adjacent pairs weighted by the word count, "

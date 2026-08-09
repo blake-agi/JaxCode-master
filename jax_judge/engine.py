@@ -137,9 +137,20 @@ def check(task_id: str) -> None:
 
     total_time = 0.0
 
+    # Some tasks ask for more than one symbol (e.g. bpe wants train_bpe AND
+    # apply_merges). Those extras are pulled from the notebook namespace too.
+    extra_names = task.get("extra_names", [])
+    missing = [n for n in extra_names if n not in user_ns]
+    if missing:
+        print(f"\n{_RED}❌ Also need: {', '.join(missing)}{_RESET}")
+        print(f"{_DIM}   This task asks for more than one function. Define "
+              f"{'them' if len(missing) > 1 else 'it'} and re-run that cell.{_RESET}\n")
+        return
+
     for i, test in enumerate(tests, 1):
         test_code = test["code"].replace("{fn}", fn_name)
         namespace: dict[str, Any] = {fn_name: user_fn}
+        namespace.update({n: user_ns[n] for n in extra_names})
 
         t0 = time.perf_counter()
         try:

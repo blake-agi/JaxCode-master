@@ -74,6 +74,9 @@ def execute_code(task_id: str, user_code: str) -> Dict[str, Any]:
     for i, test in enumerate(tests, 1):
         test_code = test["code"].replace("{fn}", fn_name)
         test_namespace: Dict[str, Any] = {fn_name: user_fn}
+        for _n in task.get("extra_names", []):
+            if _n in namespace:
+                test_namespace[_n] = namespace[_n]
         
         test_stdout = io.StringIO()
         test_stderr = io.StringIO()

@@ -60,9 +60,23 @@ def verify(task_id: str, task: dict) -> tuple[bool, list[str]]:
         problems.append(f"solution does not define '{fn_name}'")
         return False, problems
 
+    # Build the test namespace EXACTLY as jax_judge.engine.check does: the task's
+    # function_name plus any declared extra_names, and nothing else. Handing the
+    # tests the whole solution namespace instead would let a task pass here and
+    # then fail in a real notebook with a NameError.
+    extra_names = task.get("extra_names", [])
+    for name in extra_names:
+        if name not in namespace:
+            problems.append(f"extra_names lists '{name}' but the solution never defines it")
+    if problems:
+        return False, problems
+
+    judge_ns = {fn_name: namespace[fn_name]}
+    judge_ns.update({n: namespace[n] for n in extra_names})
+
     for test in task["tests"]:
         code = test["code"].replace("{fn}", fn_name)
-        ns = dict(namespace)
+        ns = dict(judge_ns)
         try:
             exec(compile(code, f"<test:{task_id}:{test['name']}>", "exec"), ns)
         except AssertionError as e:
