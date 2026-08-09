@@ -50,5 +50,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run notebooks in a real kernel
+      - name: Solution notebooks must reach an all-pass verdict
         run: python scripts/smoke_notebooks.py
+
+      # Catches bugs the solution sweep cannot: symbols the tests reference but
+      # the judge never injects, and starter stubs the judge fails to recognise.
+      - name: Blank templates must reach the judge with a clear verdict
+        run: python scripts/smoke_notebooks.py --templates

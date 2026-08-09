@@ -62,24 +62,73 @@ def _body_is_placeholder(node: ast.AST) -> bool:
     )
 
 
+def _parse_source(obj: Any) -> ast.AST | None:
+    try:
+        return ast.parse(textwrap.dedent(inspect.getsource(obj)))
+    except (OSError, TypeError, SyntaxError, IndentationError):
+        return None
+
+
+def _func_is_placeholder(fn: Any) -> bool:
+    tree = _parse_source(fn)
+    if tree is None or not tree.body:
+        return False
+    node = tree.body[0]
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return False
+    return _body_is_placeholder(node)
+
+
+def _unwrap(obj: Any) -> Any:
+    """Peel JAX/functools decorators off to reach the underlying function.
+
+    @jax.jit and @partial(jax.jit, ...) set __wrapped__; @jax.custom_vjp and
+    friends keep the primal on .fun. Without this, a decorated stub looks like
+    an opaque object rather than an unimplemented function.
+    """
+    seen: set[int] = set()
+    for _ in range(10):
+        if id(obj) in seen:
+            break
+        seen.add(id(obj))
+        nxt = None
+        for attr in ("__wrapped__", "fun", "func"):
+            cand = getattr(obj, attr, None)
+            if callable(cand) and cand is not obj:
+                nxt = cand
+                break
+        if nxt is None:
+            break
+        obj = nxt
+    return obj
+
+
 def _looks_unimplemented(obj: Any) -> bool:
     """Detect the untouched starter stub, so we can say so instead of
     dumping five identical NoneType tracebacks at the learner."""
-    try:
-        tree = ast.parse(textwrap.dedent(inspect.getsource(obj)))
-    except (OSError, TypeError, SyntaxError, IndentationError):
-        return False
-    if not tree.body:
-        return False
-    node = tree.body[0]
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return _body_is_placeholder(node)
-    if isinstance(node, ast.ClassDef):
-        methods = [
-            n for n in node.body
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    obj = _unwrap(obj)
+
+    if inspect.isclass(obj):
+        # In a Jupyter kernel inspect.getsource(cls) raises TypeError, because
+        # __main__ has no __file__ for findsource to search. Individual methods
+        # DO resolve, via IPython's linecache entry for the cell — so inspect
+        # those instead, keeping only the ones defined on this class.
+        tree = _parse_source(obj)
+        if tree is not None and tree.body and isinstance(tree.body[0], ast.ClassDef):
+            methods = [
+                n for n in tree.body[0].body
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            ]
+            return bool(methods) and all(_body_is_placeholder(m) for m in methods)
+
+        own = [
+            m for _, m in inspect.getmembers(obj, inspect.isfunction)
+            if getattr(m, "__qualname__", "").split(".")[0] == obj.__name__
         ]
-        return bool(methods) and all(_body_is_placeholder(m) for m in methods)
+        return bool(own) and all(_func_is_placeholder(m) for m in own)
+
+    if inspect.isfunction(obj) or inspect.ismethod(obj):
+        return _func_is_placeholder(obj)
     return False
 
 

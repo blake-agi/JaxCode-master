@@ -59,6 +59,7 @@ verify:
 
 smoke:
 	$(PYTHON) scripts/smoke_notebooks.py
+	$(PYTHON) scripts/smoke_notebooks.py --templates
 
 check: verify
 	$(PYTHON) scripts/generate_notebooks.py --check

@@ -103,9 +103,16 @@ def main() -> int:
             # A blank stub SHOULD fail its tests. What must hold is that the
             # submit cell still reaches the judge and prints a real verdict,
             # rather than the learner seeing only an opaque traceback.
-            verdict = "tests passed" in text or "Testing:" in text
-            if verdict:
-                print(f"  {GREEN}✅ {p.name}{RESET} {DIM}(judge reported a verdict){RESET}")
+            # A blank template should hit the "still the blank starter stub"
+            # path. Running the tests is also an acceptable verdict, but the
+            # stub message is the one we actually want the learner to see.
+            stub_notice = "still the blank starter stub" in text
+            ran_tests = "tests passed" in text or "Testing:" in text
+            if stub_notice:
+                print(f"  {GREEN}✅ {p.name}{RESET} {DIM}(stub detected){RESET}")
+            elif ran_tests:
+                print(f"  {YELLOW}⚠️  {p.name}{RESET} "
+                      f"{DIM}(ran tests — stub not detected){RESET}")
             else:
                 failures += 1
                 print(f"  {RED}❌ {p.name} — submit cell never produced a judge verdict{RESET}")
