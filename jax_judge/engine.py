@@ -103,6 +103,21 @@ def _unwrap(obj: Any) -> Any:
     return obj
 
 
+def _methods_are_placeholders(methods: list, is_placeholder) -> bool:
+    """True when every method the learner is meant to fill is still a stub.
+
+    __init__ is judged separately: some stubs hand it to you already written
+    (SimpleBPE's sets self.merges = []), so requiring EVERY method to be a
+    placeholder would miss those and dump raw test failures on the learner
+    instead of "you have not implemented this yet".
+    """
+    if not methods:
+        return False
+    name = (lambda m: m.name if hasattr(m, "name") else m.__name__)
+    fillable = [m for m in methods if name(m) != "__init__"]
+    return all(is_placeholder(m) for m in (fillable or methods))
+
+
 def _looks_unimplemented(obj: Any) -> bool:
     """Detect the untouched starter stub, so we can say so instead of
     dumping five identical NoneType tracebacks at the learner."""
@@ -119,13 +134,13 @@ def _looks_unimplemented(obj: Any) -> bool:
                 n for n in tree.body[0].body
                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
             ]
-            return bool(methods) and all(_body_is_placeholder(m) for m in methods)
+            return _methods_are_placeholders(methods, _body_is_placeholder)
 
         own = [
             m for _, m in inspect.getmembers(obj, inspect.isfunction)
             if getattr(m, "__qualname__", "").split(".")[0] == obj.__name__
         ]
-        return bool(own) and all(_func_is_placeholder(m) for m in own)
+        return _methods_are_placeholders(own, _func_is_placeholder)
 
     if inspect.isfunction(obj) or inspect.ismethod(obj):
         return _func_is_placeholder(obj)

@@ -22,7 +22,11 @@ os.environ.setdefault("XLA_FLAGS", "--xla_force_host_platform_device_count=8")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import ast  # noqa: E402
+import textwrap  # noqa: E402
+
 from jax_judge._contract import MissingSymbols, build_namespace, render_test  # noqa: E402
+from jax_judge.engine import _body_is_placeholder, _methods_are_placeholders  # noqa: E402
 from jax_judge._term import BOLD, DIM, GREEN, RED, RESET, YELLOW  # noqa: E402,F401
 from jax_judge.tasks import TASKS, list_tasks  # noqa: E402
 
@@ -30,6 +34,32 @@ REQUIRED_KEYS = {
     "title", "category", "number", "difficulty", "function_name",
     "hint", "description", "stub", "solution", "tests",
 }
+
+
+def _stub_verdict(source: str, fn_name: str) -> bool | None:
+    """Would the judge call this source an unimplemented stub?
+
+    Mirrors engine._looks_unimplemented's AST branch. We cannot call that
+    directly here because it needs inspect.getsource, which fails on objects
+    exec'd from a string (it works in a notebook via IPython's linecache).
+    """
+    try:
+        tree = ast.parse(textwrap.dedent(source))
+    except SyntaxError:
+        return None
+    node = next(
+        (n for n in tree.body
+         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+         and n.name == fn_name),
+        None,
+    )
+    if node is None:
+        return None
+    if isinstance(node, ast.ClassDef):
+        methods = [n for n in node.body
+                   if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        return _methods_are_placeholders(methods, _body_is_placeholder)
+    return _body_is_placeholder(node)
 
 
 def verify(task_id: str, task: dict) -> tuple[bool, list[str]]:
@@ -46,6 +76,19 @@ def verify(task_id: str, task: dict) -> tuple[bool, list[str]]:
     # submit cell fails with a confusing NameError before the user starts.
     if fn_name not in task["stub"]:
         problems.append(f"stub does not mention '{fn_name}'")
+
+    # And the judge must RECOGNISE it as blank, otherwise a learner who just
+    # opened the notebook gets a wall of NoneType tracebacks instead of the
+    # "you have not implemented this yet" message. bpe regressed exactly here:
+    # its stub hands you a written __init__, so "every method is a placeholder"
+    # was false.
+    if _stub_verdict(task["stub"], fn_name) is not True:
+        problems.append(
+            f"the judge would NOT recognise this stub as blank — check "
+            f"_looks_unimplemented against '{fn_name}'"
+        )
+    if _stub_verdict(task["solution"], fn_name) is True:
+        problems.append("the judge would mistake the reference solution for a blank stub")
 
     namespace: dict = {}
     try:

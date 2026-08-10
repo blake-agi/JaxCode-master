@@ -117,8 +117,11 @@ def main() -> int:
             if stub_notice:
                 print(f"  {GREEN}✅ {p.name}{RESET} {DIM}(stub detected){RESET}")
             elif ran_tests:
-                print(f"  {YELLOW}⚠️  {p.name}{RESET} "
-                      f"{DIM}(ran tests — stub not detected){RESET}")
+                # Not merely cosmetic: the learner gets a wall of NoneType
+                # tracebacks instead of "you have not implemented this yet".
+                failures += 1
+                print(f"  {RED}❌ {p.name} — blank stub NOT detected; "
+                      f"the judge ran the tests instead{RESET}")
             else:
                 failures += 1
                 print(f"  {RED}❌ {p.name} — submit cell never produced a judge verdict{RESET}")
