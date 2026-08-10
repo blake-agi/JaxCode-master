@@ -1,78 +1,68 @@
 """Multi-head cross-attention — queries from one stream, keys/values from another."""
 
 TASK = {
-    "title": "Multi-Head Cross-Attention",
+    "title": "Cross-Attention",
     "category": "Attention & Transformers",
     "number": "23",
     "difficulty": "Medium",
     "function_name": "MultiHeadCrossAttention",
     "hint": (
-        "w_q is (d_model, d_model) but w_k and w_v are (d_context, d_model) — the "
-        "context stream may be a different width. Split both sides into heads with "
-        "reshape(B, T, H, d_head).transpose(0, 2, 1, 3); T_q and T_kv are simply "
-        "different, and the score matrix comes out (B, H, T_q, T_kv). Nothing here "
-        "is square, so never write a (T, T) mask or a tril. Scale by sqrt(d_head)."
+        "Same four nnx.Linear(d_model, d_model) as self-attention. The only "
+        "change is where each projection reads from: W_q sees x_q, while W_k and "
+        "W_v both see x_kv. Read S_q off x_q and S_kv off x_kv separately — the "
+        "score matrix is (S_q, S_kv) and is generally not square. The output "
+        "length always follows the QUERY."
     ),
     "description": r"""
-Implement **multi-head cross-attention** as a `flax.nnx.Module`: the queries come
-from one sequence, the keys and values from a different one, and the two have
-unrelated lengths.
+Implement **multi-head cross-attention**: queries come from one sequence, keys
+and values from another.
 
-$$Q = x_q W_q,\quad K = x_{kv} W_k,\quad V = x_{kv} W_v,\qquad
-\text{out} = \big[\operatorname{softmax}\!\big(\tfrac{Q_hK_h^\top}{\sqrt{d_h}} + M\big)V_h\big]_{h}W_o$$
-
-with $M$ the additive form of the optional mask ($0$ where `mask` is `True`,
-$-\infty$ elsewhere) and $[\cdot]_h$ the concatenation over heads.
+$$\text{CrossAttn}(x_q, x_{kv}) = \text{softmax}\!\left(
+\frac{(x_q W^Q)(x_{kv} W^K)^\top}{\sqrt{d_k}}\right)(x_{kv} W^V)\,W^O$$
 
 ### Signature
-- `MultiHeadCrossAttention(d_model, num_heads, *, d_context=None, rngs: nnx.Rngs)`
-- `d_context` defaults to `d_model`
-- `__call__(x_q, x_kv, mask=None)` maps
-  `(B, T_q, d_model)`, `(B, T_kv, d_context)` `->` `(B, T_q, d_model)`
-- `mask` is boolean, broadcastable to `(B, H, T_q, T_kv)`; `True` = attend.
-  A key-padding mask is `(B, 1, 1, T_kv)`
+```python
+class MultiHeadCrossAttention(nnx.Module):
+    def __init__(self, d_model: int, num_heads: int, *, rngs: nnx.Rngs): ...
+    def __call__(self, x_q, x_kv): ...
+```
 
-### Rules
-- Subclass `nnx.Module`; no `nnx.MultiHeadAttention`, no
-  `jax.nn.dot_product_attention`
-- Parameters named exactly `w_q`, `w_k`, `w_v`, `w_o`, all `nnx.Param`, no biases:
-  - `w_q`: `(d_model, d_model)`
-  - `w_k`, `w_v`: `(d_context, d_model)`
-  - `w_o`: `(d_model, d_model)`
-- Initialise each with `jax.random.normal(rngs.params(), shape) / sqrt(fan_in)`
-- **No causal mask** — the whole context is visible to every query
-- `T_q` and `T_kv` are independent; nothing may assume they match
+### Requirements
+- Use `nnx.Linear(d_model, d_model)` for `self.W_q`, `self.W_k`, `self.W_v`, `self.W_o`
+- `self.d_k = d_model // num_heads`
+- `x_q` is `(B, S_q, d_model)`, `x_kv` is `(B, S_kv, d_model)`
+- Output is `(B, S_q, d_model)` — the **query** length
 
-### Where this actually shows up
-- **Encoder–decoder** (the original transformer, T5, Whisper): decoder tokens
-  query the encoder's finished representation. $T_q$ is the tokens generated so
-  far, $T_{kv}$ the source sentence or the audio frames.
-- **Diffusion** (Stable Diffusion and descendants): the UNet's image latents are
-  the queries and CLIP text embeddings are the keys/values. This is the *only*
-  place the prompt enters the network — swap the K/V stream and you swap the
-  prompt. It is also why `d_context` is a separate number: text encoders are 768
-  or 1024 wide, UNet blocks are 320/640/1280.
-- **Perceiver / Flamingo / DETR**: a small fixed array of learned queries reads
-  an enormous input. Flamingo's Perceiver Resampler uses 64 latent queries;
-  Perceiver ingests all $224^2 \approx 50\,000$ raw ImageNet pixels as keys;
-  DETR decodes with 100 object queries over a convolutional feature map. Cost is
-  $O(T_q T_{kv})$, not $O(T_{kv}^2)$ — cross-attention is how you get a
-  fixed-cost bottleneck onto arbitrarily large inputs.
+### Self-attention vs cross-attention
+Structurally they are the same computation; the difference is entirely in what
+gets projected:
 
-### The structural property worth naming in an interview
-Cross-attention **cannot mix information across query positions**. Output $i$
-depends on $x_q[i]$ and on all of $x_{kv}$, and on no other query. It is a
-per-query lookup into a shared memory — batched, not sequential. That is why a
-decoder block is always *self-attention, then cross-attention, then MLP*: the
-self-attention layer is what lets query positions talk to each other, and
-removing it leaves a model that can never build a representation spanning two
-output tokens.
+| | Q from | K, V from |
+|---|---|---|
+| self-attention | `x` | `x` |
+| cross-attention | `x_q` | `x_kv` |
 
-The second consequence is that the two streams get **separate lengths and
-separate masks**. The causal mask belongs to self-attention; what cross-attention
-needs is a key-padding mask over $T_{kv}$, shaped `(B, 1, 1, T_kv)` so it
-broadcasts across heads and queries. Writing a `(T, T)` mask here is a bug that
-only shows up when the two sequences happen to differ in length.
+So `cross(x, x)` is exactly self-attention. Everything else — the heads, the
+scaling, the softmax axis — is unchanged.
+
+### Where it shows up
+- **Encoder-decoder** transformers: the decoder queries the encoder's output,
+  which is how translation conditions on the source sentence.
+- **Diffusion models**: image latents query text embeddings — this is the
+  single point where the prompt enters a U-Net.
+- **Perceiver / Flamingo**: a small set of learned latent queries attends over a
+  large input, decoupling compute from input size.
+
+### Why the output follows the query
+Each query position produces exactly one output row, no matter how many keys it
+attended over. That is what lets cross-attention consume a context of a
+completely different length — a 1000-token document can condition a 10-token
+generation, and the cost is $O(S_q S_{kv})$ rather than anything quadratic in
+the larger one alone.
+
+### The trap
+Reading a single sequence length off `x_q` and reusing it for `x_kv` passes
+every equal-length test and then fails the moment the two differ. Read both.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -80,14 +70,13 @@ from flax import nnx
 
 
 class MultiHeadCrossAttention(nnx.Module):
-    """Queries from x_q, keys/values from x_kv. (B, T_q, d_model) out."""
+    """Queries from x_q attend over keys/values from x_kv."""
 
-    def __init__(self, d_model: int, num_heads: int, *,
-                 d_context: int | None = None, rngs: nnx.Rngs):
+    def __init__(self, d_model: int, num_heads: int, *, rngs: nnx.Rngs):
         pass  # Replace this
 
-    def __call__(self, x_q, x_kv, mask=None):
-        """x_q: (B, T_q, d_model), x_kv: (B, T_kv, d_context)."""
+    def __call__(self, x_q, x_kv):
+        """(B, S_q, d_model), (B, S_kv, d_model) -> (B, S_q, d_model)"""
         pass  # Replace this
 ''',
     "solution": '''import jax
@@ -96,292 +85,209 @@ from flax import nnx
 
 
 class MultiHeadCrossAttention(nnx.Module):
-    def __init__(self, d_model: int, num_heads: int, *,
-                 d_context: int | None = None, rngs: nnx.Rngs):
-        if d_model % num_heads != 0:
-            raise ValueError(f"d_model={d_model} is not divisible by num_heads={num_heads}")
-
-        d_context = d_model if d_context is None else d_context
-        self.d_model = d_model
-        self.d_context = d_context
+    def __init__(self, d_model: int, num_heads: int, *, rngs: nnx.Rngs):
         self.num_heads = num_heads
-        self.d_head = d_model // num_heads
+        self.d_k = d_model // num_heads
 
-        qs = 1.0 / jnp.sqrt(d_model)
-        cs = 1.0 / jnp.sqrt(d_context)
-        # K and V read the CONTEXT stream, so their fan-in is d_context.
-        self.w_q = nnx.Param(jax.random.normal(rngs.params(), (d_model, d_model)) * qs)
-        self.w_k = nnx.Param(jax.random.normal(rngs.params(), (d_context, d_model)) * cs)
-        self.w_v = nnx.Param(jax.random.normal(rngs.params(), (d_context, d_model)) * cs)
-        self.w_o = nnx.Param(jax.random.normal(rngs.params(), (d_model, d_model)) * qs)
+        self.W_q = nnx.Linear(d_model, d_model, rngs=rngs)
+        self.W_k = nnx.Linear(d_model, d_model, rngs=rngs)
+        self.W_v = nnx.Linear(d_model, d_model, rngs=rngs)
+        self.W_o = nnx.Linear(d_model, d_model, rngs=rngs)
 
-    def _split_heads(self, x):
-        """(B, T, d_model) -> (B, H, T, d_head)"""
-        B, T, _ = x.shape
-        return x.reshape(B, T, self.num_heads, self.d_head).transpose(0, 2, 1, 3)
+    def _split(self, t, B, S):
+        return t.reshape(B, S, self.num_heads, self.d_k).transpose(0, 2, 1, 3)
 
-    def __call__(self, x_q, x_kv, mask=None):
-        B, T_q, _ = x_q.shape
+    def __call__(self, x_q, x_kv):
+        B, S_q, _ = x_q.shape
+        S_kv = x_kv.shape[1]        # read separately — the two can differ
 
-        q = self._split_heads(x_q @ self.w_q)      # (B, H, T_q,  d_head)
-        k = self._split_heads(x_kv @ self.w_k)     # (B, H, T_kv, d_head)
-        v = self._split_heads(x_kv @ self.w_v)     # (B, H, T_kv, d_head)
+        # The ONLY difference from self-attention: q reads x_q, k/v read x_kv.
+        q = self._split(self.W_q(x_q), B, S_q)
+        k = self._split(self.W_k(x_kv), B, S_kv)
+        v = self._split(self.W_v(x_kv), B, S_kv)
 
-        # Rectangular by construction: (B, H, T_q, T_kv).
-        scores = (q @ jnp.swapaxes(k, -1, -2)) / jnp.sqrt(
-            jnp.asarray(self.d_head, q.dtype)
+        # == q @ jnp.swapaxes(k, -1, -2)
+        scores = jnp.einsum("bhqd,bhkd->bhqk", q, k) / jnp.sqrt(
+            jnp.asarray(self.d_k, x_q.dtype)
         )
-        if mask is not None:
-            scores = jnp.where(mask, scores, jnp.asarray(-1e9, scores.dtype))
-
         weights = jax.nn.softmax(scores, axis=-1)
-        out = (weights @ v).transpose(0, 2, 1, 3).reshape(B, T_q, self.d_model)
-        return out @ self.w_o
+        attn = jnp.einsum("bhqk,bhkd->bhqd", weights, v)     # == weights @ v
+
+        return self.W_o(attn.transpose(0, 2, 1, 3).reshape(B, S_q, -1))
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
 from flax import nnx
 
-# A diffusion-style bridge: 256 image latents query 77 CLIP text tokens.
-attn = MultiHeadCrossAttention(d_model=320, num_heads=8, d_context=768,
-                               rngs=nnx.Rngs(params=0))
-latents = jax.random.normal(jax.random.key(0), (1, 256, 320))
-text = jax.random.normal(jax.random.key(1), (1, 77, 768))
-print("w_q", attn.w_q.shape, " w_k", attn.w_k.shape, " out", attn(latents, text).shape)
+ca = MultiHeadCrossAttention(32, 4, rngs=nnx.Rngs(params=0))
 
-# Query positions never interact: perturbing one query leaves the others alone.
-small = MultiHeadCrossAttention(d_model=16, num_heads=2, rngs=nnx.Rngs(params=0))
-xq = jax.random.normal(jax.random.key(2), (1, 4, 16))
-xkv = jax.random.normal(jax.random.key(3), (1, 6, 16))
-base = small(xq, xkv)
-poked = small(xq.at[:, 2].set(99.0), xkv)
-print("max change at query 0:", float(jnp.abs(base[:, 0] - poked[:, 0]).max()))
-print("max change at query 2:", float(jnp.abs(base[:, 2] - poked[:, 2]).max()))
+dec = jax.random.normal(jax.random.key(1), (1, 4, 32))    # 4 decoder tokens
+enc = jax.random.normal(jax.random.key(2), (1, 20, 32))   # 20 encoder tokens
 
-# A key-padding mask hiding the last two context tokens.
-pad = jnp.array([[[[True, True, True, True, False, False]]]])   # (1, 1, 1, 6)
-print("masked out:", small(xq, xkv, pad).shape)
+print("decoder:", dec.shape, " encoder:", enc.shape)
+print("output :", ca(dec, enc).shape, "(follows the query length)")
+print("self-attention as a special case:", ca(dec, dec).shape)
 ''',
     "tests": [
         {
-            "name": "Shapes with T_q != T_kv",
+            "name": "Shapes and required sub-layers",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-attn = {fn}(d_model=64, num_heads=4, rngs=nnx.Rngs(params=0))
-assert isinstance(attn, nnx.Module), 'Must subclass nnx.Module'
+m = {fn}(32, 4, rngs=nnx.Rngs(params=0))
+assert m.d_k == 8, f'd_k should be 8, got {m.d_k}'
 
-out = attn(jax.random.normal(jax.random.key(0), (2, 6, 64)),
-           jax.random.normal(jax.random.key(1), (2, 10, 64)))
-assert out.shape == (2, 6, 64), (
-    f'{out.shape} vs (2, 6, 64) — the output length follows the QUERY sequence'
-)
+for name in ("W_q", "W_k", "W_v", "W_o"):
+    assert hasattr(m, name), f'Missing self.{name}'
+    assert isinstance(getattr(m, name), nnx.Linear), (
+        f'self.{name} must be an nnx.Linear, got {type(getattr(m, name))}'
+    )
+    assert getattr(m, name).kernel.shape == (32, 32), f'{name} kernel wrong'
 
-small = {fn}(d_model=32, num_heads=2, rngs=nnx.Rngs(params=0))
-for t_q, t_kv in [(1, 20), (3, 1), (7, 7), (12, 5)]:
-    o = small(jax.random.normal(jax.random.key(t_q), (1, t_q, 32)),
-              jax.random.normal(jax.random.key(t_kv + 99), (1, t_kv, 32)))
-    assert o.shape == (1, t_q, 32), (
-        f'T_q={t_q}, T_kv={t_kv} gave {o.shape} — nothing may assume a square '
-        'score matrix'
+x_q = jax.random.normal(jax.random.key(1), (2, 5, 32))
+x_kv = jax.random.normal(jax.random.key(2), (2, 9, 32))
+assert m(x_q, x_kv).shape == (2, 5, 32), f'{m(x_q, x_kv).shape}'
+""",
+        },
+        {
+            "name": "Output length follows the query",
+            "code": """
+import jax
+import jax.numpy as jnp
+from flax import nnx
+
+m = {fn}(16, 2, rngs=nnx.Rngs(params=3))
+for S_q, S_kv in ((3, 11), (11, 3), (1, 7), (6, 6)):
+    q = jax.random.normal(jax.random.key(4), (2, S_q, 16))
+    kv = jax.random.normal(jax.random.key(5), (2, S_kv, 16))
+    out = m(q, kv)
+    assert out.shape == (2, S_q, 16), (
+        f'S_q={S_q}, S_kv={S_kv}: got {out.shape}, expected (2, {S_q}, 16). '
+        'The output must follow the query, not the context.'
     )
 """,
         },
         {
-            "name": "Parameter shapes, including d_context != d_model",
+            "name": "Reduces to self-attention when both inputs match",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-a = {fn}(d_model=32, num_heads=4, rngs=nnx.Rngs(params=0))
-for name, want in [('w_q', (32, 32)), ('w_k', (32, 32)),
-                   ('w_v', (32, 32)), ('w_o', (32, 32))]:
-    p = getattr(a, name)
-    assert isinstance(p, nnx.Param), f'{name} must be an nnx.Param, got {type(p)}'
-    assert p.shape == want, f'{name} shape {p.shape} vs {want}'
+m = {fn}(16, 4, rngs=nnx.Rngs(params=6))
+x = jax.random.normal(jax.random.key(7), (2, 6, 16))
 
-# The context stream may be a different width (768-d text -> 320-d UNet).
-b = {fn}(d_model=32, num_heads=4, d_context=48, rngs=nnx.Rngs(params=0))
-assert b.w_q.shape == (32, 32), f'w_q {b.w_q.shape} vs (32, 32)'
-assert b.w_k.shape == (48, 32), (
-    f'w_k {b.w_k.shape} vs (48, 32) — K reads the context, so its fan-in is d_context'
-)
-assert b.w_v.shape == (48, 32), f'w_v {b.w_v.shape} vs (48, 32)'
-assert b.w_o.shape == (32, 32), f'w_o {b.w_o.shape} vs (32, 32)'
+B, S, H, d_k = 2, 6, 4, 4
+def split(t):
+    return t.reshape(B, S, H, d_k).transpose(0, 2, 1, 3)
+q, k, v = split(m.W_q(x)), split(m.W_k(x)), split(m.W_v(x))
+s = jnp.einsum("bhqd,bhkd->bhqk", q, k) / jnp.sqrt(jnp.asarray(d_k, x.dtype))
+a = jnp.einsum("bhqk,bhkd->bhqd", jax.nn.softmax(s, axis=-1), v)
+ref = m.W_o(a.transpose(0, 2, 1, 3).reshape(B, S, -1))
 
-o = b(jax.random.normal(jax.random.key(0), (2, 5, 32)),
-      jax.random.normal(jax.random.key(1), (2, 9, 48)))
-assert o.shape == (2, 5, 32), f'Mixed-width output {o.shape} vs (2, 5, 32)'
-
-try:
-    {fn}(d_model=30, num_heads=4, rngs=nnx.Rngs(params=0))
-except Exception:
-    pass
-else:
-    raise AssertionError('d_model=30 with num_heads=4 should raise')
+assert jnp.allclose(m(x, x), ref, atol=1e-5), 'cross(x, x) must equal self-attention'
 """,
         },
         {
-            "name": "Exact match against the reference computation",
+            "name": "K and V come from the context, Q from the query",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-B, T_q, T_kv, D, C, H = 2, 4, 7, 16, 24, 4
-dh = D // H
-m = {fn}(d_model=D, num_heads=H, d_context=C, rngs=nnx.Rngs(params=0))
-x_q = jax.random.normal(jax.random.key(0), (B, T_q, D))
-x_kv = jax.random.normal(jax.random.key(1), (B, T_kv, C))
-out = m(x_q, x_kv)
+m = {fn}(16, 2, rngs=nnx.Rngs(params=8))
+q = jax.random.normal(jax.random.key(9), (1, 4, 16))
+kv = jax.random.normal(jax.random.key(10), (1, 6, 16))
+base = m(q, kv)
 
-
-def split(y, t):
-    return y.reshape(B, t, H, dh).transpose(0, 2, 1, 3)
-
-
-q = split(x_q @ m.w_q[...], T_q)
-k = split(x_kv @ m.w_k[...], T_kv)
-v = split(x_kv @ m.w_v[...], T_kv)
-scores = (q @ jnp.swapaxes(k, -1, -2)) / jnp.sqrt(float(dh))
-assert scores.shape == (B, H, T_q, T_kv)
-attn = jax.nn.softmax(scores, axis=-1) @ v
-ref = attn.transpose(0, 2, 1, 3).reshape(B, T_q, D) @ m.w_o[...]
-
-assert jnp.allclose(out, ref, atol=1e-5), (
-    'Output does not match the reference. Check: Q comes from x_q and K/V from '
-    'x_kv (not the other way round), heads split with '
-    'reshape(B, T, H, d_head).transpose(0, 2, 1, 3), and the scale is sqrt(d_head).'
+# Changing the context must change the output...
+kv2 = kv.at[:, 0].add(50.0)
+assert not jnp.allclose(base, m(q, kv2), atol=1e-3), (
+    'Changing x_kv did not change the output — K/V are not reading from x_kv'
+)
+# ...and changing the query must too.
+q2 = q.at[:, 0].add(50.0)
+assert not jnp.allclose(base, m(q2, kv), atol=1e-3), (
+    'Changing x_q did not change the output — Q is not reading from x_q'
+)
+# A query position depends only on itself among the queries.
+q3 = q.at[:, 3].add(50.0)
+out3 = m(q3, kv)
+assert jnp.allclose(base[:, :3], out3[:, :3], atol=1e-4), (
+    'Perturbing query 3 changed earlier query outputs — queries must not '
+    'attend to each other in cross-attention'
 )
 """,
         },
         {
-            "name": "Query positions are independent; all context is visible",
+            "name": "Scaled by 1/sqrt(d_k)",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-m = {fn}(d_model=32, num_heads=2, rngs=nnx.Rngs(params=0))
-x_q = jax.random.normal(jax.random.key(0), (1, 4, 32))
-x_kv = jax.random.normal(jax.random.key(1), (1, 6, 32))
-base = m(x_q, x_kv)
+m = {fn}(4, 1, rngs=nnx.Rngs(params=11))
+for lin in (m.W_q, m.W_k, m.W_v, m.W_o):
+    lin.kernel[...] = jnp.eye(4)
+    lin.bias[...] = jnp.zeros(4)
 
-# Cross-attention has no path between query positions.
-poked = m(x_q.at[:, 2].set(jax.random.normal(jax.random.key(2), (32,))), x_kv)
-for i in (0, 1, 3):
-    assert jnp.allclose(base[:, i], poked[:, i], atol=1e-5), (
-        f'Changing query 2 changed output {i}. Cross-attention must not mix '
-        'information across query positions — that is what self-attention is for.'
-    )
-assert not jnp.allclose(base[:, 2], poked[:, 2], atol=1e-5), 'Query 2 was ignored'
+q = jnp.array([[[1.0, 0.0, 0.0, 0.0]]])
+kv = jnp.array([[[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]])
+out = m(q, kv)
 
-# No causal mask: every query sees every context token, including the last.
-kv2 = x_kv.at[:, -1].set(jax.random.normal(jax.random.key(3), (32,)))
-assert not jnp.allclose(base[:, 0], m(x_q, kv2)[:, 0], atol=1e-5), (
-    'Changing the LAST context token left query 0 unchanged — you applied a '
-    'causal mask, which does not belong in cross-attention'
-)
-kv3 = x_kv.at[:, 0].set(jax.random.normal(jax.random.key(4), (32,)))
-assert not jnp.allclose(base[:, 3], m(x_q, kv3)[:, 3], atol=1e-5), (
-    'Changing the FIRST context token left query 3 unchanged'
+w = jax.nn.softmax(jnp.array([1.0 / jnp.sqrt(4.0), 0.0]))
+expected = w[0] * kv[0, 0] + w[1] * kv[0, 1]
+assert jnp.allclose(out[0, 0], expected, atol=1e-5), (
+    f'Got {out[0, 0]}, expected {expected} — check the 1/sqrt(d_k) scaling'
 )
 """,
         },
         {
-            "name": "Key-padding mask over the context",
+            "name": "Attention weights are a distribution over the context",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-B, T_q, T_kv, D, H = 1, 4, 6, 32, 2
-m = {fn}(d_model=D, num_heads=H, rngs=nnx.Rngs(params=0))
-x_q = jax.random.normal(jax.random.key(0), (B, T_q, D))
-x_kv = jax.random.normal(jax.random.key(1), (B, T_kv, D))
+m = {fn}(4, 1, rngs=nnx.Rngs(params=12))
+for lin in (m.W_q, m.W_k, m.W_v, m.W_o):
+    lin.kernel[...] = jnp.eye(4)
+    lin.bias[...] = jnp.zeros(4)
 
-keep = jnp.array([True, True, True, False, False, False])
-mask = keep[None, None, None, :]          # (B, 1, 1, T_kv), broadcasts over heads
-masked = m(x_q, x_kv, mask)
-assert masked.shape == (B, T_q, D), f'Masked output {masked.shape} vs {(B, T_q, D)}'
+q = jax.random.normal(jax.random.key(13), (1, 3, 4))
+kv = jnp.array([[[0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]])
+out = m(q, kv)
 
-# Masking the tail must equal simply not passing it.
-truncated = m(x_q, x_kv[:, :3])
-assert jnp.allclose(masked, truncated, atol=1e-5), (
-    'Masked attention over 6 context tokens (last 3 blocked) must equal '
-    'attention over the first 3 alone. If it does not, the mask is being '
-    'applied after the softmax instead of to the scores before it.'
-)
-
-# Padded slots may hold arbitrary garbage without changing the answer.
-junk = x_kv.at[:, 3:].set(1e3)
-assert jnp.allclose(m(x_q, junk, mask), masked, atol=1e-4), (
-    'Garbage in the padded context slots leaked into the output'
-)
-assert not jnp.allclose(masked, m(x_q, x_kv), atol=1e-5), 'The mask is being ignored'
-""",
-        },
-        {
-            "name": "Gradients reach both streams and all projections",
-            "code": """
-import jax
-import jax.numpy as jnp
-from flax import nnx
-
-m = {fn}(d_model=16, num_heads=2, d_context=12, rngs=nnx.Rngs(params=0))
-x_q = jax.random.normal(jax.random.key(0), (2, 4, 16))
-x_kv = jax.random.normal(jax.random.key(1), (2, 6, 12))
-
-grads = nnx.grad(lambda mod: jnp.sum(mod(x_q, x_kv) ** 2))(m)
-leaves = [jnp.asarray(l) for l in jax.tree.leaves(grads)]
-assert len(leaves) == 4, f'Expected 4 parameter gradients, got {len(leaves)}'
-for i, g in enumerate(leaves):
-    assert jnp.isfinite(g).all(), f'Non-finite gradient in leaf {i}'
-    assert float(jnp.abs(g).sum()) > 0.0, f'Leaf {i} has an all-zero gradient'
-
-# Both input streams must receive gradient.
-gq, gkv = nnx.grad(lambda mod, a, b: jnp.sum(mod(a, b) ** 2),
-                   argnums=(1, 2))(m, x_q, x_kv)
-assert gq.shape == x_q.shape and gkv.shape == x_kv.shape, f'{gq.shape} {gkv.shape}'
-assert float(jnp.abs(gq).sum()) > 0.0, 'No gradient flows to x_q'
-assert float(jnp.abs(gkv).sum()) > 0.0, (
-    'No gradient flows to x_kv — in an encoder-decoder this is the only path '
-    'that trains the encoder'
+assert (out >= -1e-5).all() and (out <= 1.0 + 1e-5).all(), (
+    f'Outputs {out} escape the convex hull of V — the softmax is over the '
+    'wrong axis (it must normalise across CONTEXT positions)'
 )
 """,
         },
         {
-            "name": "Composes with nnx.jit and varying lengths",
+            "name": "Gradients and jit",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-m = {fn}(d_model=16, num_heads=4, rngs=nnx.Rngs(params=0))
-x_q = jax.random.normal(jax.random.key(0), (3, 5, 16))
-x_kv = jax.random.normal(jax.random.key(1), (3, 8, 16))
-eager = m(x_q, x_kv)
+m = {fn}(16, 4, rngs=nnx.Rngs(params=14))
+q = jax.random.normal(jax.random.key(15), (2, 4, 16))
+kv = jax.random.normal(jax.random.key(16), (2, 7, 16))
 
+grads = nnx.grad(lambda mod: jnp.sum(mod(q, kv) ** 2))(m)
+state = nnx.state(grads)
+for name in ("W_q", "W_k", "W_v", "W_o"):
+    k = state[name]["kernel"]
+    val = k[...] if isinstance(k, nnx.Variable) else k
+    assert jnp.isfinite(val).all(), f'Non-finite gradient for {name}'
+    assert float(jnp.abs(val).sum()) > 0, f'No gradient reached {name}'
 
-@nnx.jit
-def fwd(mod, a, b):
-    return mod(a, b)
-
-
-assert jnp.allclose(fwd(m, x_q, x_kv), eager, atol=1e-5), 'nnx.jit changed the result'
-
-# Batch items stay independent.
-assert jnp.allclose(m(x_q[1:2], x_kv[1:2])[0], eager[1], atol=1e-5), (
-    'Running example 1 alone differs from the batched call'
-)
-
-# Growing the query length one step at a time, as a decoder does.
-for t in (1, 2, 5, 9):
-    o = m(jax.random.normal(jax.random.key(t), (1, t, 16)), x_kv[:1])
-    assert o.shape == (1, t, 16), f'T_q={t} gave {o.shape}'
+graphdef, st = nnx.split(m)
+run = jax.jit(lambda st, a, b: nnx.merge(graphdef, st)(a, b))
+assert jnp.allclose(run(st, q, kv), m(q, kv), atol=1e-5), 'jit changes the result'
 """,
         },
     ],
