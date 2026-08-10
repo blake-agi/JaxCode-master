@@ -5,7 +5,7 @@ TASK = {
     "category": "Core Ops & Layers",
     "order": 2,
     "difficulty": "Easy",
-    "function_name": "gelu",
+    "function_name": "my_gelu",
     "hint": (
         "Both formulas are written out in the description — transcribe them "
         "literally, including the 0.044715 and the sqrt(2/pi). Branch on the "
@@ -31,7 +31,7 @@ $$0.5\,x\left(1 + \tanh\!\left(\sqrt{\tfrac{2}{\pi}}\left(x + 0.044715\,x^3\righ
 
 ### Signature
 ```python
-def gelu(x, approximate=False):
+def my_gelu(x, approximate=False):
     ...
 ```
 
@@ -61,7 +61,7 @@ import jax.numpy as jnp
 from jax.scipy.special import erf
 
 
-def gelu(x, approximate=False):
+def my_gelu(x, approximate=False):
     """GELU activation.
 
     Args:
@@ -78,7 +78,7 @@ import jax.numpy as jnp
 from jax.scipy.special import erf
 
 
-def gelu(x, approximate=False):
+def my_gelu(x, approximate=False):
     if approximate:
         # The form GPT-2 / BERT shipped.
         c = jnp.sqrt(2.0 / jnp.pi)
@@ -90,10 +90,10 @@ def gelu(x, approximate=False):
 import jax.numpy as jnp
 
 x = jnp.array([-3.0, -1.0, 0.0, 1.0, 3.0])
-print("exact: ", gelu(x))
-print("tanh:  ", gelu(x, approximate=True))
-print("max gap:", jnp.max(jnp.abs(gelu(x) - gelu(x, approximate=True))))
-print("grad:  ", jax.grad(lambda v: jnp.sum(gelu(v)))(x))
+print("exact: ", my_gelu(x))
+print("tanh:  ", my_gelu(x, approximate=True))
+print("max gap:", jnp.max(jnp.abs(my_gelu(x) - my_gelu(x, approximate=True))))
+print("grad:  ", jax.grad(lambda v: jnp.sum(my_gelu(v)))(x))
 ''',
     "tests": [
         {
