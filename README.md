@@ -140,7 +140,7 @@ reporting a diff.
 ## 📚 Problems
 
 <!-- PROBLEMS:START -->
-**52 problems** — 🟢 14 Easy · 🟡 27 Medium · 🔴 11 Hard
+**52 problems** — 🟢 13 Easy · 🟡 19 Medium · 🔴 20 Hard
 
 
 ### JAX Fundamentals (11)
@@ -164,65 +164,65 @@ reporting a diff.
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
 | 12 | [Implement ReLU](templates/12_relu.ipynb) | 🟢 Easy | `relu` |
-| 13 | [Implement GELU (exact and tanh)](templates/13_gelu.ipynb) | 🟢 Easy | `gelu` |
+| 13 | [GELU Activation](templates/13_gelu.ipynb) | 🟢 Easy | `gelu` |
 | 14 | [Implement Softmax](templates/14_softmax.ipynb) | 🟢 Easy | `softmax` |
-| 15 | [Linear Layer (nnx.Module)](templates/15_linear.ipynb) | 🟢 Easy | `linear` |
-| 16 | [LayerNorm (nnx.Module)](templates/16_layernorm.ipynb) | 🟢 Easy | `layernorm` |
-| 17 | [RMSNorm (nnx.Module)](templates/17_rmsnorm.ipynb) | 🟢 Easy | `rmsnorm` |
-| 18 | [BatchNorm with Running Stats (nnx.Module)](templates/18_batchnorm.ipynb) | 🟡 Medium | `batchnorm` |
-| 19 | [Inverted Dropout (nnx.Module)](templates/19_dropout.ipynb) | 🟡 Medium | `dropout` |
-| 20 | [Embedding Lookup (nnx.Module)](templates/20_embedding.ipynb) | 🟢 Easy | `embedding` |
-| 21 | [Two-Layer MLP (nnx.Module)](templates/21_mlp.ipynb) | 🟢 Easy | `mlp` |
-| 22 | [Xavier and He Initialisation](templates/22_weight_init.ipynb) | 🟡 Medium | `weight_init` |
-| 23 | [Conv2D from Scratch (NHWC)](templates/23_conv2d.ipynb) | 🔴 Hard | `conv2d` |
+| 15 | [Simple Linear Layer](templates/15_linear.ipynb) | 🟡 Medium | `linear` |
+| 16 | [Implement LayerNorm](templates/16_layernorm.ipynb) | 🟡 Medium | `layernorm` |
+| 17 | [Implement RMSNorm](templates/17_rmsnorm.ipynb) | 🟡 Medium | `rmsnorm` |
+| 18 | [Implement BatchNorm](templates/18_batchnorm.ipynb) | 🟡 Medium | `batchnorm` |
+| 19 | [Implement Dropout](templates/19_dropout.ipynb) | 🟢 Easy | `dropout` |
+| 20 | [Embedding Layer](templates/20_embedding.ipynb) | 🟢 Easy | `embedding` |
+| 21 | [SwiGLU MLP](templates/21_mlp.ipynb) | 🟡 Medium | `mlp` |
+| 22 | [Kaiming Initialization](templates/22_weight_init.ipynb) | 🟢 Easy | `weight_init` |
+| 23 | [2D Convolution](templates/23_conv2d.ipynb) | 🟡 Medium | `conv2d` |
 
 ### Attention & Transformers (14)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
-| 24 | [Scaled Dot-Product Attention](templates/24_attention.ipynb) | 🟡 Medium | `attention` |
-| 25 | [Multi-Head Attention (nnx.Module)](templates/25_mha.ipynb) | 🟡 Medium | `mha` |
-| 26 | [Causal Self-Attention](templates/26_causal_attention.ipynb) | 🟡 Medium | `causal_attention` |
+| 24 | [Softmax Attention](templates/24_attention.ipynb) | 🔴 Hard | `attention` |
+| 25 | [Multi-Head Attention](templates/25_mha.ipynb) | 🔴 Hard | `mha` |
+| 26 | [Causal Self-Attention](templates/26_causal_attention.ipynb) | 🔴 Hard | `causal_attention` |
 | 27 | [Multi-Head Cross-Attention](templates/27_cross_attention.ipynb) | 🟡 Medium | `cross_attention` |
-| 28 | [Grouped-Query Attention](templates/28_gqa.ipynb) | 🟡 Medium | `gqa` |
-| 29 | [Sliding-Window Attention](templates/29_sliding_window.ipynb) | 🟡 Medium | `sliding_window` |
-| 30 | [Linear Attention (kernel feature map)](templates/30_linear_attention.ipynb) | 🔴 Hard | `linear_attention` |
-| 31 | [FlashAttention (tiled online softmax)](templates/31_flash_attention.ipynb) | 🔴 Hard | `flash_attention` |
-| 32 | [Rotary Position Embeddings (RoPE)](templates/32_rope.ipynb) | 🟡 Medium | `rope` |
-| 33 | [KV Cache for Incremental Decoding (nnx.Module)](templates/33_kv_cache.ipynb) | 🟡 Medium | `kv_cache` |
+| 28 | [Grouped Query Attention](templates/28_gqa.ipynb) | 🔴 Hard | `gqa` |
+| 29 | [Sliding Window Attention](templates/29_sliding_window.ipynb) | 🔴 Hard | `sliding_window` |
+| 30 | [Linear Self-Attention](templates/30_linear_attention.ipynb) | 🔴 Hard | `linear_attention` |
+| 31 | [Flash Attention (Tiled)](templates/31_flash_attention.ipynb) | 🔴 Hard | `flash_attention` |
+| 32 | [Rotary Position Embedding (RoPE)](templates/32_rope.ipynb) | 🔴 Hard | `rope` |
+| 33 | [KV Cache Attention](templates/33_kv_cache.ipynb) | 🔴 Hard | `kv_cache` |
 | 34 | [GPT-2 Transformer Block](templates/34_gpt2_block.ipynb) | 🔴 Hard | `gpt2_block` |
 | 35 | [ViT Patch Embedding](templates/35_vit_patch.ipynb) | 🟡 Medium | `vit_patch` |
-| 36 | [Mixture of Experts (top-k routing)](templates/36_moe.ipynb) | 🔴 Hard | `moe` |
+| 36 | [Mixture of Experts (MoE)](templates/36_moe.ipynb) | 🔴 Hard | `moe` |
 | 37 | [LoRA (Low-Rank Adaptation)](templates/37_lora.ipynb) | 🟡 Medium | `lora` |
 
 ### Training (6)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
-| 38 | [Cross-Entropy Loss from Logits](templates/38_cross_entropy.ipynb) | 🟢 Easy | `cross_entropy` |
-| 39 | [Linear Regression: Closed Form vs Gradient Descent](templates/39_linear_regression.ipynb) | 🟡 Medium | `linear_regression` |
+| 38 | [Cross-Entropy Loss](templates/38_cross_entropy.ipynb) | 🟢 Easy | `cross_entropy` |
+| 39 | [Linear Regression](templates/39_linear_regression.ipynb) | 🟡 Medium | `linear_regression` |
 | 40 | [Adam Optimizer](templates/40_adam.ipynb) | 🟡 Medium | `adam` |
-| 41 | [Cosine LR Schedule with Warmup](templates/41_cosine_lr.ipynb) | 🟢 Easy | `cosine_lr` |
-| 42 | [Global-Norm Gradient Clipping](templates/42_gradient_clipping.ipynb) | 🟡 Medium | `gradient_clipping` |
-| 43 | [Gradient Accumulation](templates/43_gradient_accumulation.ipynb) | 🟡 Medium | `gradient_accumulation` |
+| 41 | [Cosine LR Scheduler with Warmup](templates/41_cosine_lr.ipynb) | 🟡 Medium | `cosine_lr` |
+| 42 | [Gradient Norm Clipping](templates/42_gradient_clipping.ipynb) | 🟢 Easy | `gradient_clipping` |
+| 43 | [Gradient Accumulation](templates/43_gradient_accumulation.ipynb) | 🟢 Easy | `gradient_accumulation` |
 
 ### Inference & Decoding (5)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
 | 44 | [Top-k / Top-p Sampling](templates/44_topk_sampling.ipynb) | 🟡 Medium | `topk_sampling` |
-| 45 | [Beam Search with Length Normalisation](templates/45_beam_search.ipynb) | 🔴 Hard | `beam_search` |
-| 46 | [Speculative Decoding (draft, verify, resample)](templates/46_speculative_decoding.ipynb) | 🔴 Hard | `speculative_decoding` |
-| 47 | [Byte-Pair Encoding (train and apply)](templates/47_bpe.ipynb) | 🟡 Medium | `bpe` |
-| 48 | [INT8 Quantization (symmetric and asymmetric)](templates/48_int8_quantization.ipynb) | 🟡 Medium | `int8_quantization` |
+| 45 | [Beam Search Decoding](templates/45_beam_search.ipynb) | 🟡 Medium | `beam_search` |
+| 46 | [Speculative Decoding](templates/46_speculative_decoding.ipynb) | 🔴 Hard | `speculative_decoding` |
+| 47 | [Byte-Pair Encoding (BPE)](templates/47_bpe.ipynb) | 🔴 Hard | `bpe` |
+| 48 | [INT8 Quantized Linear](templates/48_int8_quantization.ipynb) | 🔴 Hard | `int8_quantization` |
 
 ### RLHF & Preference Losses (4)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
-| 49 | [DPO (Direct Preference Optimization) Loss](templates/49_dpo_loss.ipynb) | 🟡 Medium | `dpo_loss` |
+| 49 | [DPO (Direct Preference Optimization) Loss](templates/49_dpo_loss.ipynb) | 🔴 Hard | `dpo_loss` |
 | 50 | [GRPO (Group Relative Policy Optimization) Loss](templates/50_grpo_loss.ipynb) | 🔴 Hard | `grpo_loss` |
-| 51 | [PPO Clipped Surrogate Loss](templates/51_ppo_loss.ipynb) | 🟡 Medium | `ppo_loss` |
+| 51 | [PPO (Proximal Policy Optimization) Clipped Loss](templates/51_ppo_loss.ipynb) | 🔴 Hard | `ppo_loss` |
 | 52 | [OPD (On-Policy Distillation) Loss](templates/52_opd_loss.ipynb) | 🔴 Hard | `opd_loss` |
 <!-- PROBLEMS:END -->
 

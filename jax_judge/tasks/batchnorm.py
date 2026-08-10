@@ -1,7 +1,7 @@
 """BatchNorm with running statistics — nnx.BatchStat and mutable module state."""
 
 TASK = {
-    "title": "BatchNorm with Running Stats (nnx.Module)",
+    "title": "Implement BatchNorm",
     "category": "Core Ops & Layers",
     "order": 7,
     "difficulty": "Medium",

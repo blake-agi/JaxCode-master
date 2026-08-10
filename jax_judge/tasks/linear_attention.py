@@ -1,7 +1,7 @@
 """Linear attention — the associativity trick that turns O(T^2) into O(T)."""
 
 TASK = {
-    "title": "Linear Attention (kernel feature map)",
+    "title": "Linear Self-Attention",
     "category": "Attention & Transformers",
     "order": 7,
     "difficulty": "Hard",

@@ -1,10 +1,10 @@
 """Two-layer MLP as an nnx.Module — raw weight matrices, GELU, expansion ratio."""
 
 TASK = {
-    "title": "Two-Layer MLP (nnx.Module)",
+    "title": "SwiGLU MLP",
     "category": "Core Ops & Layers",
     "order": 10,
-    "difficulty": "Easy",
+    "difficulty": "Medium",
     "function_name": "MLP",
     "hint": (
         "Store four nnx.Param attributes: w1 (din, hidden), b1 (hidden,), "

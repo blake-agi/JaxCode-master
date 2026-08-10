@@ -1,10 +1,10 @@
 """Preallocated KV cache — static shapes, in-place writes, mutable nnx state."""
 
 TASK = {
-    "title": "KV Cache for Incremental Decoding (nnx.Module)",
+    "title": "KV Cache Attention",
     "category": "Attention & Transformers",
     "order": 10,
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "function_name": "KVCache",
     "hint": (
         "Allocate the full (B, H, max_len, Dh) buffers once in __init__ with "

@@ -1,10 +1,10 @@
 """Scaled dot-product attention as a pure function — the scaling and the mask."""
 
 TASK = {
-    "title": "Scaled Dot-Product Attention",
+    "title": "Softmax Attention",
     "category": "Attention & Transformers",
     "order": 1,
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "function_name": "scaled_dot_product_attention",
     "hint": (
         "scores = q @ jnp.swapaxes(k, -1, -2) / jnp.sqrt(q.shape[-1]) — the "

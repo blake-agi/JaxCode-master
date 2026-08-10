@@ -1,10 +1,10 @@
 """Rotary Position Embeddings — the inverse-frequency table and the pairwise rotation."""
 
 TASK = {
-    "title": "Rotary Position Embeddings (RoPE)",
+    "title": "Rotary Position Embedding (RoPE)",
     "category": "Attention & Transformers",
     "order": 9,
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "function_name": "apply_rope",
     "hint": (
         "There are only D/2 distinct angles per position, so the cos/sin table is "

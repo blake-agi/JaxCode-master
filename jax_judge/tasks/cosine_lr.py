@@ -1,10 +1,10 @@
 """Cosine decay with linear warmup — a pure function of the step counter."""
 
 TASK = {
-    "title": "Cosine LR Schedule with Warmup",
+    "title": "Cosine LR Scheduler with Warmup",
     "category": "Training",
     "order": 4,
-    "difficulty": "Easy",
+    "difficulty": "Medium",
     "function_name": "cosine_schedule",
     "hint": (
         "Evaluate BOTH regimes unconditionally and select with jnp.where — a "

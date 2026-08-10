@@ -1,10 +1,10 @@
 """Xavier/Glorot and He/Kaiming initialisation — variance preservation from scratch."""
 
 TASK = {
-    "title": "Xavier and He Initialisation",
+    "title": "Kaiming Initialization",
     "category": "Core Ops & Layers",
     "order": 11,
-    "difficulty": "Medium",
+    "difficulty": "Easy",
     "function_name": "init_weights",
     "hint": (
         "Unpack fan_in, fan_out = shape — in JAX the weight is (fan_in, fan_out) "

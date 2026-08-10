@@ -4,7 +4,7 @@ TASK = {
     "title": "Causal Self-Attention",
     "category": "Attention & Transformers",
     "order": 3,
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "function_name": "causal_attention",
     "hint": (
         "Build the allowed pattern with jnp.tril(jnp.ones((T, T), dtype=bool)) — "

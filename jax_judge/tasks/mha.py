@@ -1,10 +1,10 @@
 """Multi-head self-attention as an nnx.Module — the reshape/transpose dance."""
 
 TASK = {
-    "title": "Multi-Head Attention (nnx.Module)",
+    "title": "Multi-Head Attention",
     "category": "Attention & Transformers",
     "order": 2,
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "function_name": "MultiHeadAttention",
     "hint": (
         "Four (d_model, d_model) nnx.Param matrices: w_q, w_k, w_v, w_o. "

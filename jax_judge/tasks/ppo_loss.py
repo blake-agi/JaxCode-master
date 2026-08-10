@@ -1,10 +1,10 @@
 """PPO's clipped surrogate — and why the min() is the whole trick."""
 
 TASK = {
-    "title": "PPO Clipped Surrogate Loss",
+    "title": "PPO (Proximal Policy Optimization) Clipped Loss",
     "category": "RLHF & Preference Losses",
     "order": 3,
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "function_name": "ppo_loss",
     "hint": (
         "Five lines, three of which are easy to get subtly wrong. The ratio is a "

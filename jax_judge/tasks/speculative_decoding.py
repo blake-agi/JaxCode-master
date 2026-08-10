@@ -1,7 +1,7 @@
 """Speculative decoding — provably lossless, if you get the residual right."""
 
 TASK = {
-    "title": "Speculative Decoding (draft, verify, resample)",
+    "title": "Speculative Decoding",
     "category": "Inference & Decoding",
     "order": 3,
     "difficulty": "Hard",

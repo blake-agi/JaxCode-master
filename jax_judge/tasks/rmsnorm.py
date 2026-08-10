@@ -1,10 +1,10 @@
 """RMSNorm — LayerNorm minus the mean subtraction, as used by Llama."""
 
 TASK = {
-    "title": "RMSNorm (nnx.Module)",
+    "title": "Implement RMSNorm",
     "category": "Core Ops & Layers",
     "order": 6,
-    "difficulty": "Easy",
+    "difficulty": "Medium",
     "function_name": "RMSNorm",
     "hint": (
         "Take your LayerNorm and delete two things: the mean subtraction and the "

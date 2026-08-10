@@ -1,10 +1,10 @@
 """Byte-pair encoding — train the merges, then apply them."""
 
 TASK = {
-    "title": "Byte-Pair Encoding (train and apply)",
+    "title": "Byte-Pair Encoding (BPE)",
     "category": "Inference & Decoding",
     "order": 4,
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "function_name": "train_bpe",
     # The tests exercise both halves, so apply_merges must be pulled from the
     # notebook namespace alongside train_bpe.

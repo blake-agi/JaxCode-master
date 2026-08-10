@@ -1,11 +1,11 @@
 """Inverted dropout — nnx.Rngs streams and the train/eval scaling question."""
 
 TASK = {
-    "title": "Inverted Dropout (nnx.Module)",
+    "title": "Implement Dropout",
     "category": "Core Ops & Layers",
     "order": 8,
-    "difficulty": "Medium",
-    "function_name": "Dropout",
+    "difficulty": "Easy",
+    "function_name": "MyDropout",
     "hint": (
         "Pull a fresh key from the rng stream with self.rngs.dropout(), then "
         "keep = jax.random.bernoulli(key, 1.0 - self.rate, x.shape). Return "
@@ -24,7 +24,7 @@ $$y_i = \frac{x_i \cdot m_i}{1 - p}, \qquad m_i \sim \text{Bernoulli}(1-p)$$
 **Inference:** return `x` unchanged.
 
 ### Rules
-- Signature: `Dropout(rate, *, rngs)`
+- Signature: `MyDropout(rate, *, rngs)`
 - `__call__(x, deterministic=False)`
 - Draw the mask from the `dropout` rng stream: `self.rngs.dropout()`
 - Each call must use a **fresh** key — two training calls must give different masks
@@ -71,7 +71,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class Dropout(nnx.Module):
+class MyDropout(nnx.Module):
     """Inverted dropout."""
 
     def __init__(self, rate: float, *, rngs: nnx.Rngs):
@@ -85,7 +85,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class Dropout(nnx.Module):
+class MyDropout(nnx.Module):
     def __init__(self, rate: float, *, rngs: nnx.Rngs):
         self.rate = rate
         self.rngs = rngs
@@ -105,7 +105,7 @@ class Dropout(nnx.Module):
 import jax.numpy as jnp
 from flax import nnx
 
-drop = Dropout(0.5, rngs=nnx.Rngs(dropout=0))
+drop = MyDropout(0.5, rngs=nnx.Rngs(dropout=0))
 x = jnp.ones((4, 6))
 
 print("train call 1:\\n", drop(x))

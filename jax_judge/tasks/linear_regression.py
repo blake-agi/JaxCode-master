@@ -1,7 +1,7 @@
 """Least squares two ways — QR/lstsq closed form with ridge, and gradient descent."""
 
 TASK = {
-    "title": "Linear Regression: Closed Form vs Gradient Descent",
+    "title": "Linear Regression",
     "category": "Training",
     "order": 2,
     "difficulty": "Medium",

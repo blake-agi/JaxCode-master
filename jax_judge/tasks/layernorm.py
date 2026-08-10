@@ -1,10 +1,10 @@
 """LayerNorm as an nnx.Module — per-sample normalization plus affine params."""
 
 TASK = {
-    "title": "LayerNorm (nnx.Module)",
+    "title": "Implement LayerNorm",
     "category": "Core Ops & Layers",
     "order": 5,
-    "difficulty": "Easy",
+    "difficulty": "Medium",
     "function_name": "LayerNorm",
     "hint": (
         "Reduce over the LAST axis only, and pass keepdims=True — without it the "

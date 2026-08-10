@@ -1,10 +1,10 @@
 """Global-norm gradient clipping over a whole pytree — one scalar for every leaf."""
 
 TASK = {
-    "title": "Global-Norm Gradient Clipping",
+    "title": "Gradient Norm Clipping",
     "category": "Training",
     "order": 5,
-    "difficulty": "Medium",
+    "difficulty": "Easy",
     "function_name": "clip_by_global_norm",
     "hint": (
         "jax.tree.leaves flattens any pytree to a list of arrays. Accumulate the "

@@ -1,7 +1,7 @@
 """GELU — exact erf form and the tanh approximation GPT-2 actually shipped."""
 
 TASK = {
-    "title": "Implement GELU (exact and tanh)",
+    "title": "GELU Activation",
     "category": "Core Ops & Layers",
     "order": 2,
     "difficulty": "Easy",

@@ -4,7 +4,7 @@ TASK = {
     "title": "Gradient Accumulation",
     "category": "Training",
     "order": 6,
-    "difficulty": "Medium",
+    "difficulty": "Easy",
     "function_name": "accumulate_grads",
     "hint": (
         "Accumulate into a zero-filled copy of the params tree. The whole problem "

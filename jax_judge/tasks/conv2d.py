@@ -1,10 +1,10 @@
 """2-D convolution from scratch — NHWC/HWIO, stride, and TF-style SAME padding."""
 
 TASK = {
-    "title": "Conv2D from Scratch (NHWC)",
+    "title": "2D Convolution",
     "category": "Core Ops & Layers",
     "order": 12,
-    "difficulty": "Hard",
+    "difficulty": "Medium",
     "function_name": "conv2d",
     "hint": (
         "Two steps. (1) Padding: 'VALID' pads nothing; for 'SAME' the output is "

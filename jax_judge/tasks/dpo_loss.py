@@ -4,7 +4,7 @@ TASK = {
     "title": "DPO (Direct Preference Optimization) Loss",
     "category": "RLHF & Preference Losses",
     "order": 1,
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "function_name": "dpo_loss",
     "hint": (
         "The whole loss is four lines and the shape never changes: (batch,) in, "

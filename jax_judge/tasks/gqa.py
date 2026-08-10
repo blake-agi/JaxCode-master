@@ -1,11 +1,11 @@
 """Grouped-Query Attention as an nnx.Module — fewer KV heads than query heads."""
 
 TASK = {
-    "title": "Grouped-Query Attention",
+    "title": "Grouped Query Attention",
     "category": "Attention & Transformers",
     "order": 5,
-    "difficulty": "Medium",
-    "function_name": "GroupedQueryAttention",
+    "difficulty": "Hard",
+    "function_name": "GroupQueryAttention",
     "hint": (
         "Only w_q and w_o are square. w_k and w_v project d_model -> "
         "num_kv_heads * head_dim, so after reshaping you get K/V of shape "
@@ -31,7 +31,7 @@ $H_{kv} = H$ is ordinary MHA; $H_{kv} = 1$ is Multi-Query Attention.
 ### Rules
 - Subclass `nnx.Module`. Do **not** use `nnx.MultiHeadAttention`,
   `nnx.dot_product_attention` or `jax.nn.dot_product_attention`
-- Signature: `GroupedQueryAttention(d_model, num_heads, num_kv_heads, *, rngs)`
+- Signature: `GroupQueryAttention(d_model, num_heads, num_kv_heads, *, rngs)`
 - Parameters — all `nnx.Param`, all `(din, dout)`, **no biases**:
   - `self.w_q`, `self.w_o`: `(d_model, d_model)`
   - `self.w_k`, `self.w_v`: `(d_model, num_kv_heads * head_dim)`
@@ -89,7 +89,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class GroupedQueryAttention(nnx.Module):
+class GroupQueryAttention(nnx.Module):
     """Multi-head attention with num_kv_heads < num_heads shared KV heads."""
 
     def __init__(
@@ -111,7 +111,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class GroupedQueryAttention(nnx.Module):
+class GroupQueryAttention(nnx.Module):
     def __init__(
         self,
         d_model: int,
@@ -168,7 +168,7 @@ D, H = 512, 8
 x = jax.random.normal(jax.random.key(0), (1, 16, D))
 
 for kv in (8, 4, 1):
-    m = GroupedQueryAttention(D, H, kv, rngs=nnx.Rngs(params=0))
+    m = GroupQueryAttention(D, H, kv, rngs=nnx.Rngs(params=0))
     n_params = sum(p.size for p in jax.tree.leaves(nnx.state(m, nnx.Param)))
     cache_per_token = 2 * kv * (D // H) * 2          # K and V, fp16 bytes
     print(

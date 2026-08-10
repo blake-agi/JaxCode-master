@@ -1,10 +1,10 @@
 """Sliding-window (local causal) attention — a banded mask and why it works."""
 
 TASK = {
-    "title": "Sliding-Window Attention",
+    "title": "Sliding Window Attention",
     "category": "Attention & Transformers",
     "order": 6,
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "function_name": "sliding_window_attention",
     "hint": (
         "Build the band with two broadcast aranges: i = jnp.arange(T)[:, None], "

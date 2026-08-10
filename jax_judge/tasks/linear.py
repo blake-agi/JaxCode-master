@@ -1,11 +1,11 @@
-"""A Linear layer as an nnx.Module — parameters, rngs, and shape conventions."""
+"""A linear layer as an nnx.Module — parameters, rngs, and shape conventions."""
 
 TASK = {
-    "title": "Linear Layer (nnx.Module)",
+    "title": "Simple Linear Layer",
     "category": "Core Ops & Layers",
     "order": 4,
-    "difficulty": "Easy",
-    "function_name": "Linear",
+    "difficulty": "Medium",
+    "function_name": "SimpleLinear",
     "hint": (
         "Registration in NNX is just assignment: any nnx.Param you set on self in "
         "__init__ is found automatically. Get a key by CALLING the stream — "
@@ -22,7 +22,7 @@ $$y = xW + b, \qquad W \in \mathbb{R}^{d_{in} \times d_{out}},\; b \in \mathbb{R
 
 ### Rules
 - Subclass `nnx.Module`; do **not** use `nnx.Linear`
-- Signature: `Linear(din, dout, *, use_bias=True, rngs)`
+- Signature: `SimpleLinear(din, dout, *, use_bias=True, rngs)`
 - Weights stored as `self.w`, bias as `self.b` (or `None` when `use_bias=False`)
 - Both must be wrapped in `nnx.Param`
 - Initialise `w` with `jax.random.normal(...) / sqrt(din)`; `b` with zeros
@@ -30,7 +30,7 @@ $$y = xW + b, \qquad W \in \mathbb{R}^{d_{in} \times d_{out}},\; b \in \mathbb{R
 
 ### The NNX mental model
 ```python
-class Linear(nnx.Module):
+class SimpleLinear(nnx.Module):
     def __init__(self, din, dout, *, rngs: nnx.Rngs):
         self.w = nnx.Param(jax.random.normal(rngs.params(), (din, dout)))
         ...
@@ -63,7 +63,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class Linear(nnx.Module):
+class SimpleLinear(nnx.Module):
     """y = x @ w + b"""
 
     def __init__(self, din: int, dout: int, *, use_bias: bool = True, rngs: nnx.Rngs):
@@ -78,7 +78,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class Linear(nnx.Module):
+class SimpleLinear(nnx.Module):
     def __init__(self, din: int, dout: int, *, use_bias: bool = True, rngs: nnx.Rngs):
         # rngs.params() hands back a fresh key on every call.
         key = rngs.params()
@@ -96,15 +96,15 @@ class Linear(nnx.Module):
     "demo": '''import jax.numpy as jnp
 from flax import nnx
 
-layer = Linear(4, 3, rngs=nnx.Rngs(params=0))
+layer = SimpleLinear(4, 3, rngs=nnx.Rngs(params=0))
 x = jnp.ones((2, 4))
 
 print("w shape:", layer.w.shape, " b shape:", layer.b.shape)
 print("out shape:", layer(x).shape)
 
-no_bias = Linear(4, 3, use_bias=False, rngs=nnx.Rngs(params=0))
+no_bias = SimpleLinear(4, 3, use_bias=False, rngs=nnx.Rngs(params=0))
 print("bias when use_bias=False:", no_bias.b)
-print("batched (5, 6, 4) ->", Linear(4, 3, rngs=nnx.Rngs(params=1))(jnp.ones((5, 6, 4))).shape)
+print("batched (5, 6, 4) ->", SimpleLinear(4, 3, rngs=nnx.Rngs(params=1))(jnp.ones((5, 6, 4))).shape)
 ''',
     "tests": [
         {

@@ -1,10 +1,10 @@
 """Beam search with length-normalised scoring over a black-box score function."""
 
 TASK = {
-    "title": "Beam Search with Length Normalisation",
+    "title": "Beam Search Decoding",
     "category": "Inference & Decoding",
     "order": 2,
-    "difficulty": "Hard",
+    "difficulty": "Medium",
     "function_name": "beam_search",
     "hint": (
         "Carry two Python lists — live hypotheses and finished ones — and let the "

@@ -1,11 +1,11 @@
 """Mixture of Experts — top-k routing and the load-balancing loss that saves it."""
 
 TASK = {
-    "title": "Mixture of Experts (top-k routing)",
+    "title": "Mixture of Experts (MoE)",
     "category": "Attention & Transformers",
     "order": 13,
     "difficulty": "Hard",
-    "function_name": "MoELayer",
+    "function_name": "MixtureOfExperts",
     "hint": (
         "Router logits are (N, E); take jax.lax.top_k(logits, k) and softmax "
         "over ONLY the k selected logits, so the kept weights sum to 1. For the "
@@ -21,7 +21,7 @@ both the output and the load-balancing auxiliary loss.
 
 ### Signature
 ```python
-class MoELayer(nnx.Module):
+class MixtureOfExperts(nnx.Module):
     def __init__(self, d_model, d_hidden, num_experts, top_k=2, *, rngs):
         ...
     def __call__(self, x):
@@ -102,7 +102,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class MoELayer(nnx.Module):
+class MixtureOfExperts(nnx.Module):
     """Top-k mixture of experts. Returns (output, aux_loss)."""
 
     def __init__(self, d_model: int, d_hidden: int, num_experts: int,
@@ -121,7 +121,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class MoELayer(nnx.Module):
+class MixtureOfExperts(nnx.Module):
     """Top-k mixture of experts. Returns (output, aux_loss)."""
 
     def __init__(self, d_model: int, d_hidden: int, num_experts: int,
@@ -179,7 +179,7 @@ class MoELayer(nnx.Module):
 import jax.numpy as jnp
 from flax import nnx
 
-layer = MoELayer(d_model=32, d_hidden=64, num_experts=8, top_k=2, rngs=nnx.Rngs(0))
+layer = MixtureOfExperts(d_model=32, d_hidden=64, num_experts=8, top_k=2, rngs=nnx.Rngs(0))
 x = jax.random.normal(jax.random.key(1), (2, 16, 32))
 
 out, aux = layer(x)

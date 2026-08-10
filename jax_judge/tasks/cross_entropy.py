@@ -1,7 +1,7 @@
 """Cross-entropy from logits — the log-sum-exp trick, label smoothing, padding mask."""
 
 TASK = {
-    "title": "Cross-Entropy Loss from Logits",
+    "title": "Cross-Entropy Loss",
     "category": "Training",
     "order": 1,
     "difficulty": "Easy",

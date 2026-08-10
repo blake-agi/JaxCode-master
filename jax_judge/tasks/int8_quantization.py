@@ -1,10 +1,10 @@
 """int8 quantization — scale, zero-point, and why outliers ruin everything."""
 
 TASK = {
-    "title": "INT8 Quantization (symmetric and asymmetric)",
+    "title": "INT8 Quantized Linear",
     "category": "Inference & Decoding",
     "order": 5,
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "function_name": "quantize_int8",
     "hint": (
         "Both modes are the same three lines with a different (scale, "

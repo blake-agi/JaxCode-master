@@ -1,11 +1,11 @@
 """Embedding lookup — indexing vs one-hot matmul, and why gradients are sparse."""
 
 TASK = {
-    "title": "Embedding Lookup (nnx.Module)",
+    "title": "Embedding Layer",
     "category": "Core Ops & Layers",
     "order": 9,
     "difficulty": "Easy",
-    "function_name": "Embedding",
+    "function_name": "MyEmbedding",
     "hint": (
         "The forward pass is one line: self.table[ids]. JAX's advanced indexing "
         "handles any shape of ids and appends the feature axis, so (B, T) ids "
@@ -18,7 +18,7 @@ Implement an **embedding table** as an `nnx.Module`.
 Map integer token ids to dense vectors: `(...) -> (..., features)`.
 
 ### Rules
-- Signature: `Embedding(num_embeddings, features, *, rngs)`
+- Signature: `MyEmbedding(num_embeddings, features, *, rngs)`
 - Table stored as `self.table`, an `nnx.Param` of shape `(num_embeddings, features)`
 - Initialise with `jax.random.normal(...) * 0.02` (the GPT-2 convention)
 - `__call__(ids)` accepts **any** shape of integer ids
@@ -56,7 +56,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class Embedding(nnx.Module):
+class MyEmbedding(nnx.Module):
     """Integer ids -> dense vectors."""
 
     def __init__(self, num_embeddings: int, features: int, *, rngs: nnx.Rngs):
@@ -75,7 +75,7 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-class Embedding(nnx.Module):
+class MyEmbedding(nnx.Module):
     def __init__(self, num_embeddings: int, features: int, *, rngs: nnx.Rngs):
         key = rngs.params()
         self.table = nnx.Param(
@@ -96,7 +96,7 @@ class Embedding(nnx.Module):
     "demo": '''import jax.numpy as jnp
 from flax import nnx
 
-emb = Embedding(100, 8, rngs=nnx.Rngs(params=0))
+emb = MyEmbedding(100, 8, rngs=nnx.Rngs(params=0))
 
 print("table:", emb.table.shape)
 print("scalar id  ->", emb(jnp.array(5)).shape)

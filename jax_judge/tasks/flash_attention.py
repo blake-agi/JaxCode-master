@@ -1,7 +1,7 @@
 """FlashAttention — online softmax, tiled, and numerically exact."""
 
 TASK = {
-    "title": "FlashAttention (tiled online softmax)",
+    "title": "Flash Attention (Tiled)",
     "category": "Attention & Transformers",
     "order": 8,
     "difficulty": "Hard",
