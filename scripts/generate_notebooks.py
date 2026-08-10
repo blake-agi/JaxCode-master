@@ -117,7 +117,7 @@ def _setup_cell(task: dict) -> str:
 
 
 def build_template(task_id: str, task: dict, num: int) -> dict:
-    rel = f"templates/{num:02d}_{task_id}.ipynb"
+    rel = f"templates/{num}_{task_id}.ipynb"
     emoji = DIFF_EMOJI.get(task["difficulty"], "⚪")
 
     header = (
@@ -155,7 +155,7 @@ def build_template(task_id: str, task: dict, num: int) -> dict:
 
 
 def build_solution(task_id: str, task: dict, num: int) -> dict:
-    rel = f"solutions/{num:02d}_{task_id}_solution.ipynb"
+    rel = f"solutions/{num}_{task_id}_solution.ipynb"
     emoji = DIFF_EMOJI.get(task["difficulty"], "⚪")
 
     header = (
@@ -163,7 +163,7 @@ def build_solution(task_id: str, task: dict, num: int) -> dict:
         f"# {emoji} Solution: {task['title']}\n\n"
         f"*{task['category']} · {task['difficulty']}*\n\n"
         f"Reference implementation. Try it yourself in "
-        f"`{num:02d}_{task_id}.ipynb` first.\n\n"
+        f"`{num}_{task_id}.ipynb` first.\n\n"
         "---\n"
         f"{task['description'].strip()}\n"
     )
@@ -240,9 +240,9 @@ def build_welcome(numbered: list[tuple[int, str, dict]]) -> dict:
             lines.append("| # | Problem | Difficulty | Task id |")
             lines.append("|---|---|---|---|")
         emoji = DIFF_EMOJI.get(task["difficulty"], "⚪")
-        nb = f"{num:02d}_{task_id}.ipynb"
+        nb = f"{num}_{task_id}.ipynb"
         lines.append(
-            f"| {num:02d} | [{task['title']}]({nb}) | {emoji} {task['difficulty']} "
+            f"| {num} | [{task['title']}]({nb}) | {emoji} {task['difficulty']} "
             f"| `{task_id}` |"
         )
 
@@ -300,9 +300,9 @@ def build_readme_table(numbered: list[tuple[int, str, dict]]) -> str:
                 "|---|---|---|---|",
             ]
         emoji = DIFF_EMOJI.get(task["difficulty"], "⚪")
-        nb = f"templates/{num:02d}_{task_id}.ipynb"
+        nb = f"templates/{num}_{task_id}.ipynb"
         lines.append(
-            f"| {num:02d} | [{task['title']}]({nb}) | {emoji} {task['difficulty']} "
+            f"| {num} | [{task['title']}]({nb}) | {emoji} {task['difficulty']} "
             f"| `{task_id}` |"
         )
 
@@ -322,11 +322,25 @@ def render_readme(numbered: list[tuple[int, str, dict]]) -> str | None:
     return f"{head}{README_START}\n{table}\n{README_END}{tail}"
 
 
-def numbered_tasks() -> list[tuple[int, str, dict]]:
-    return [
-        (i, task_id, task)
-        for i, (task_id, task) in enumerate(list_tasks(), start=1)
-    ]
+def numbered_tasks() -> list[tuple[str, str, dict]]:
+    """(label, task_id, task) in curriculum order.
+
+    The label is AUTHORED in the task dict as `number`, not derived from
+    position: the 41 ported problems keep the PyTorch original's numbers so the
+    two repos line up, and the JAX-only additions carry b_01..b_11. Falls back
+    to the ordinal only if a task forgot to declare one.
+    """
+    out = []
+    seen: dict[str, str] = {}
+    for i, (task_id, task) in enumerate(list_tasks(), start=1):
+        label = task.get("number") or f"{i:02d}"
+        if label in seen:
+            raise ValueError(
+                f"duplicate notebook number {label!r}: {seen[label]} and {task_id}"
+            )
+        seen[label] = task_id
+        out.append((label, task_id, task))
+    return out
 
 
 def render_all() -> dict[Path, str]:
@@ -339,8 +353,8 @@ def render_all() -> dict[Path, str]:
     ) + "\n"
 
     for num, task_id, task in numbered:
-        t_path = TEMPLATES_DIR / f"{num:02d}_{task_id}.ipynb"
-        s_path = SOLUTIONS_DIR / f"{num:02d}_{task_id}_solution.ipynb"
+        t_path = TEMPLATES_DIR / f"{num}_{task_id}.ipynb"
+        s_path = SOLUTIONS_DIR / f"{num}_{task_id}_solution.ipynb"
         out[t_path] = json.dumps(
             build_template(task_id, task, num), indent=1, ensure_ascii=False
         ) + "\n"

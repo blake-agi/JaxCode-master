@@ -4,6 +4,7 @@ TASK = {
     "title": "Cross-Entropy Loss",
     "category": "Training",
     "order": 1,
+    "number": "16",
     "difficulty": "Easy",
     "function_name": "cross_entropy_loss",
     "hint": (

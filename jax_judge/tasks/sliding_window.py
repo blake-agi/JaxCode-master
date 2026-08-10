@@ -4,6 +4,7 @@ TASK = {
     "title": "Sliding Window Attention",
     "category": "Attention & Transformers",
     "order": 6,
+    "number": "11",
     "difficulty": "Hard",
     "function_name": "sliding_window_attention",
     "hint": (

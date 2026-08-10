@@ -4,6 +4,7 @@ TASK = {
     "title": "GRPO (Group Relative Policy Optimization) Loss",
     "category": "RLHF & Preference Losses",
     "order": 2,
+    "number": "38",
     "difficulty": "Hard",
     "function_name": "grpo_loss",
     "hint": (

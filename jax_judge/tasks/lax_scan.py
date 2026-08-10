@@ -4,6 +4,7 @@ TASK = {
     "title": "Discounted Returns with lax.scan",
     "category": "JAX Fundamentals",
     "order": 6,
+    "number": "b_06",
     "difficulty": "Medium",
     "function_name": "discounted_returns",
     "hint": (

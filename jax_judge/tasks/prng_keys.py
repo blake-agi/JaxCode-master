@@ -4,6 +4,7 @@ TASK = {
     "title": "PRNG Keys and Splitting",
     "category": "JAX Fundamentals",
     "order": 5,
+    "number": "b_05",
     "difficulty": "Easy",
     "function_name": "init_ensemble",
     "hint": (

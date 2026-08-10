@@ -4,6 +4,7 @@ TASK = {
     "title": "Rotary Position Embedding (RoPE)",
     "category": "Attention & Transformers",
     "order": 9,
+    "number": "24",
     "difficulty": "Hard",
     "function_name": "apply_rope",
     "hint": (

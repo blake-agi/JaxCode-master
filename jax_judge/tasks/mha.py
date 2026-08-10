@@ -4,6 +4,7 @@ TASK = {
     "title": "Multi-Head Attention",
     "category": "Attention & Transformers",
     "order": 2,
+    "number": "06",
     "difficulty": "Hard",
     "function_name": "MultiHeadAttention",
     "hint": (

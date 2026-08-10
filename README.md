@@ -147,83 +147,83 @@ reporting a diff.
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
-| 01 | [SGD Step with value_and_grad](templates/01_grad_basics.ipynb) | 🟢 Easy | `grad_basics` |
-| 02 | [Pairwise Distances with vmap](templates/02_vmap_batching.ipynb) | 🟢 Easy | `vmap_batching` |
-| 03 | [jit with static_argnames](templates/03_jit_static.ipynb) | 🟢 Easy | `jit_static` |
-| 04 | [Stack a List of Pytrees](templates/04_pytree_ops.ipynb) | 🟡 Medium | `pytree_ops` |
-| 05 | [PRNG Keys and Splitting](templates/05_prng_keys.ipynb) | 🟢 Easy | `prng_keys` |
-| 06 | [Discounted Returns with lax.scan](templates/06_lax_scan.ipynb) | 🟡 Medium | `lax_scan` |
-| 07 | [Newton's Method with lax.while_loop](templates/07_lax_control_flow.ipynb) | 🟡 Medium | `lax_control_flow` |
-| 08 | [Stable log(1+exp(x)) with custom_vjp](templates/08_custom_vjp.ipynb) | 🔴 Hard | `custom_vjp` |
-| 09 | [Hessian with jacfwd(jacrev(f))](templates/09_higher_order_grad.ipynb) | 🟡 Medium | `higher_order_grad` |
-| 10 | [Gradient Checkpointing with jax.checkpoint](templates/10_remat_checkpoint.ipynb) | 🟡 Medium | `remat_checkpoint` |
-| 11 | [Data-Parallel Mean with shard_map](templates/11_sharding_basics.ipynb) | 🔴 Hard | `sharding_basics` |
+| b_01 | [SGD Step with value_and_grad](templates/b_01_grad_basics.ipynb) | 🟢 Easy | `grad_basics` |
+| b_02 | [Pairwise Distances with vmap](templates/b_02_vmap_batching.ipynb) | 🟢 Easy | `vmap_batching` |
+| b_03 | [jit with static_argnames](templates/b_03_jit_static.ipynb) | 🟢 Easy | `jit_static` |
+| b_04 | [Stack a List of Pytrees](templates/b_04_pytree_ops.ipynb) | 🟡 Medium | `pytree_ops` |
+| b_05 | [PRNG Keys and Splitting](templates/b_05_prng_keys.ipynb) | 🟢 Easy | `prng_keys` |
+| b_06 | [Discounted Returns with lax.scan](templates/b_06_lax_scan.ipynb) | 🟡 Medium | `lax_scan` |
+| b_07 | [Newton's Method with lax.while_loop](templates/b_07_lax_control_flow.ipynb) | 🟡 Medium | `lax_control_flow` |
+| b_08 | [Stable log(1+exp(x)) with custom_vjp](templates/b_08_custom_vjp.ipynb) | 🔴 Hard | `custom_vjp` |
+| b_09 | [Hessian with jacfwd(jacrev(f))](templates/b_09_higher_order_grad.ipynb) | 🟡 Medium | `higher_order_grad` |
+| b_10 | [Gradient Checkpointing with jax.checkpoint](templates/b_10_remat_checkpoint.ipynb) | 🟡 Medium | `remat_checkpoint` |
+| b_11 | [Data-Parallel Mean with shard_map](templates/b_11_sharding_basics.ipynb) | 🔴 Hard | `sharding_basics` |
 
 ### Core Ops & Layers (12)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
-| 12 | [Implement ReLU](templates/12_relu.ipynb) | 🟢 Easy | `relu` |
-| 13 | [GELU Activation](templates/13_gelu.ipynb) | 🟢 Easy | `gelu` |
-| 14 | [Implement Softmax](templates/14_softmax.ipynb) | 🟢 Easy | `softmax` |
-| 15 | [Simple Linear Layer](templates/15_linear.ipynb) | 🟡 Medium | `linear` |
-| 16 | [Implement LayerNorm](templates/16_layernorm.ipynb) | 🟡 Medium | `layernorm` |
-| 17 | [Implement RMSNorm](templates/17_rmsnorm.ipynb) | 🟡 Medium | `rmsnorm` |
-| 18 | [Implement BatchNorm](templates/18_batchnorm.ipynb) | 🟡 Medium | `batchnorm` |
-| 19 | [Implement Dropout](templates/19_dropout.ipynb) | 🟢 Easy | `dropout` |
-| 20 | [Embedding Layer](templates/20_embedding.ipynb) | 🟢 Easy | `embedding` |
-| 21 | [SwiGLU MLP](templates/21_mlp.ipynb) | 🟡 Medium | `mlp` |
-| 22 | [Kaiming Initialization](templates/22_weight_init.ipynb) | 🟢 Easy | `weight_init` |
-| 23 | [2D Convolution](templates/23_conv2d.ipynb) | 🟡 Medium | `conv2d` |
+| 01 | [Implement ReLU](templates/01_relu.ipynb) | 🟢 Easy | `relu` |
+| 19 | [GELU Activation](templates/19_gelu.ipynb) | 🟢 Easy | `gelu` |
+| 02 | [Implement Softmax](templates/02_softmax.ipynb) | 🟢 Easy | `softmax` |
+| 03 | [Simple Linear Layer](templates/03_linear.ipynb) | 🟡 Medium | `linear` |
+| 04 | [Implement LayerNorm](templates/04_layernorm.ipynb) | 🟡 Medium | `layernorm` |
+| 08 | [Implement RMSNorm](templates/08_rmsnorm.ipynb) | 🟡 Medium | `rmsnorm` |
+| 07 | [Implement BatchNorm](templates/07_batchnorm.ipynb) | 🟡 Medium | `batchnorm` |
+| 17 | [Implement Dropout](templates/17_dropout.ipynb) | 🟢 Easy | `dropout` |
+| 18 | [Embedding Layer](templates/18_embedding.ipynb) | 🟢 Easy | `embedding` |
+| 15 | [SwiGLU MLP](templates/15_mlp.ipynb) | 🟡 Medium | `mlp` |
+| 20 | [Kaiming Initialization](templates/20_weight_init.ipynb) | 🟢 Easy | `weight_init` |
+| 22 | [2D Convolution](templates/22_conv2d.ipynb) | 🟡 Medium | `conv2d` |
 
 ### Attention & Transformers (14)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
-| 24 | [Softmax Attention](templates/24_attention.ipynb) | 🔴 Hard | `attention` |
-| 25 | [Multi-Head Attention](templates/25_mha.ipynb) | 🔴 Hard | `mha` |
-| 26 | [Causal Self-Attention](templates/26_causal_attention.ipynb) | 🔴 Hard | `causal_attention` |
-| 27 | [Multi-Head Cross-Attention](templates/27_cross_attention.ipynb) | 🟡 Medium | `cross_attention` |
-| 28 | [Grouped Query Attention](templates/28_gqa.ipynb) | 🔴 Hard | `gqa` |
-| 29 | [Sliding Window Attention](templates/29_sliding_window.ipynb) | 🔴 Hard | `sliding_window` |
-| 30 | [Linear Self-Attention](templates/30_linear_attention.ipynb) | 🔴 Hard | `linear_attention` |
-| 31 | [Flash Attention (Tiled)](templates/31_flash_attention.ipynb) | 🔴 Hard | `flash_attention` |
-| 32 | [Rotary Position Embedding (RoPE)](templates/32_rope.ipynb) | 🔴 Hard | `rope` |
-| 33 | [KV Cache Attention](templates/33_kv_cache.ipynb) | 🔴 Hard | `kv_cache` |
-| 34 | [GPT-2 Transformer Block](templates/34_gpt2_block.ipynb) | 🔴 Hard | `gpt2_block` |
-| 35 | [ViT Patch Embedding](templates/35_vit_patch.ipynb) | 🟡 Medium | `vit_patch` |
-| 36 | [Mixture of Experts (MoE)](templates/36_moe.ipynb) | 🔴 Hard | `moe` |
-| 37 | [LoRA (Low-Rank Adaptation)](templates/37_lora.ipynb) | 🟡 Medium | `lora` |
+| 05 | [Softmax Attention](templates/05_attention.ipynb) | 🔴 Hard | `attention` |
+| 06 | [Multi-Head Attention](templates/06_mha.ipynb) | 🔴 Hard | `mha` |
+| 09 | [Causal Self-Attention](templates/09_causal_attention.ipynb) | 🔴 Hard | `causal_attention` |
+| 23 | [Multi-Head Cross-Attention](templates/23_cross_attention.ipynb) | 🟡 Medium | `cross_attention` |
+| 10 | [Grouped Query Attention](templates/10_gqa.ipynb) | 🔴 Hard | `gqa` |
+| 11 | [Sliding Window Attention](templates/11_sliding_window.ipynb) | 🔴 Hard | `sliding_window` |
+| 12 | [Linear Self-Attention](templates/12_linear_attention.ipynb) | 🔴 Hard | `linear_attention` |
+| 25 | [Flash Attention (Tiled)](templates/25_flash_attention.ipynb) | 🔴 Hard | `flash_attention` |
+| 24 | [Rotary Position Embedding (RoPE)](templates/24_rope.ipynb) | 🔴 Hard | `rope` |
+| 14 | [KV Cache Attention](templates/14_kv_cache.ipynb) | 🔴 Hard | `kv_cache` |
+| 13 | [GPT-2 Transformer Block](templates/13_gpt2_block.ipynb) | 🔴 Hard | `gpt2_block` |
+| 27 | [ViT Patch Embedding](templates/27_vit_patch.ipynb) | 🟡 Medium | `vit_patch` |
+| 28 | [Mixture of Experts (MoE)](templates/28_moe.ipynb) | 🔴 Hard | `moe` |
+| 26 | [LoRA (Low-Rank Adaptation)](templates/26_lora.ipynb) | 🟡 Medium | `lora` |
 
 ### Training (6)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
-| 38 | [Cross-Entropy Loss](templates/38_cross_entropy.ipynb) | 🟢 Easy | `cross_entropy` |
-| 39 | [Linear Regression](templates/39_linear_regression.ipynb) | 🟡 Medium | `linear_regression` |
-| 40 | [Adam Optimizer](templates/40_adam.ipynb) | 🟡 Medium | `adam` |
-| 41 | [Cosine LR Scheduler with Warmup](templates/41_cosine_lr.ipynb) | 🟡 Medium | `cosine_lr` |
-| 42 | [Gradient Norm Clipping](templates/42_gradient_clipping.ipynb) | 🟢 Easy | `gradient_clipping` |
-| 43 | [Gradient Accumulation](templates/43_gradient_accumulation.ipynb) | 🟢 Easy | `gradient_accumulation` |
+| 16 | [Cross-Entropy Loss](templates/16_cross_entropy.ipynb) | 🟢 Easy | `cross_entropy` |
+| 40 | [Linear Regression](templates/40_linear_regression.ipynb) | 🟡 Medium | `linear_regression` |
+| 29 | [Implement Adam Optimizer](templates/29_adam.ipynb) | 🟡 Medium | `adam` |
+| 30 | [Cosine LR Scheduler with Warmup](templates/30_cosine_lr.ipynb) | 🟡 Medium | `cosine_lr` |
+| 21 | [Gradient Norm Clipping](templates/21_gradient_clipping.ipynb) | 🟢 Easy | `gradient_clipping` |
+| 31 | [Gradient Accumulation](templates/31_gradient_accumulation.ipynb) | 🟢 Easy | `gradient_accumulation` |
 
 ### Inference & Decoding (5)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
-| 44 | [Top-k / Top-p Sampling](templates/44_topk_sampling.ipynb) | 🟡 Medium | `topk_sampling` |
-| 45 | [Beam Search Decoding](templates/45_beam_search.ipynb) | 🟡 Medium | `beam_search` |
-| 46 | [Speculative Decoding](templates/46_speculative_decoding.ipynb) | 🔴 Hard | `speculative_decoding` |
-| 47 | [Byte-Pair Encoding (BPE)](templates/47_bpe.ipynb) | 🔴 Hard | `bpe` |
-| 48 | [INT8 Quantized Linear](templates/48_int8_quantization.ipynb) | 🔴 Hard | `int8_quantization` |
+| 32 | [Top-k / Top-p Sampling](templates/32_topk_sampling.ipynb) | 🟡 Medium | `topk_sampling` |
+| 33 | [Beam Search Decoding](templates/33_beam_search.ipynb) | 🟡 Medium | `beam_search` |
+| 34 | [Speculative Decoding](templates/34_speculative_decoding.ipynb) | 🔴 Hard | `speculative_decoding` |
+| 35 | [Byte-Pair Encoding (BPE)](templates/35_bpe.ipynb) | 🔴 Hard | `bpe` |
+| 36 | [INT8 Quantized Linear](templates/36_int8_quantization.ipynb) | 🔴 Hard | `int8_quantization` |
 
 ### RLHF & Preference Losses (4)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
-| 49 | [DPO (Direct Preference Optimization) Loss](templates/49_dpo_loss.ipynb) | 🔴 Hard | `dpo_loss` |
-| 50 | [GRPO (Group Relative Policy Optimization) Loss](templates/50_grpo_loss.ipynb) | 🔴 Hard | `grpo_loss` |
-| 51 | [PPO (Proximal Policy Optimization) Clipped Loss](templates/51_ppo_loss.ipynb) | 🔴 Hard | `ppo_loss` |
-| 52 | [OPD (On-Policy Distillation) Loss](templates/52_opd_loss.ipynb) | 🔴 Hard | `opd_loss` |
+| 37 | [DPO (Direct Preference Optimization) Loss](templates/37_dpo_loss.ipynb) | 🔴 Hard | `dpo_loss` |
+| 38 | [GRPO (Group Relative Policy Optimization) Loss](templates/38_grpo_loss.ipynb) | 🔴 Hard | `grpo_loss` |
+| 39 | [PPO (Proximal Policy Optimization) Clipped Loss](templates/39_ppo_loss.ipynb) | 🔴 Hard | `ppo_loss` |
+| 41 | [OPD (On-Policy Distillation) Loss](templates/41_opd_loss.ipynb) | 🔴 Hard | `opd_loss` |
 <!-- PROBLEMS:END -->
 
 ---

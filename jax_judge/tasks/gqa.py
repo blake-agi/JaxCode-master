@@ -4,6 +4,7 @@ TASK = {
     "title": "Grouped Query Attention",
     "category": "Attention & Transformers",
     "order": 5,
+    "number": "10",
     "difficulty": "Hard",
     "function_name": "GroupQueryAttention",
     "hint": (

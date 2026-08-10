@@ -4,6 +4,7 @@ TASK = {
     "title": "Beam Search Decoding",
     "category": "Inference & Decoding",
     "order": 2,
+    "number": "33",
     "difficulty": "Medium",
     "function_name": "beam_search",
     "hint": (

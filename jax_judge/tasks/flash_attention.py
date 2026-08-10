@@ -4,6 +4,7 @@ TASK = {
     "title": "Flash Attention (Tiled)",
     "category": "Attention & Transformers",
     "order": 8,
+    "number": "25",
     "difficulty": "Hard",
     "function_name": "flash_attention",
     "hint": (

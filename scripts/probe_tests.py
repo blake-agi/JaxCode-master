@@ -107,31 +107,19 @@ def my_softmax(x, axis=-1):
 
 print(f"\n{BOLD}=== layernorm ==={RESET}")
 holes.append(("layernorm", probe("layernorm", "unbiased variance (ddof=1)", '''
-import jax, jax.numpy as jnp
-from flax import nnx
-class LayerNorm(nnx.Module):
-    def __init__(self, dim, eps=1e-5, *, rngs=None):
-        self.eps = eps
-        self.scale = nnx.Param(jnp.ones((dim,)))
-        self.bias = nnx.Param(jnp.zeros((dim,)))
-    def __call__(self, x):
-        mu = jnp.mean(x, axis=-1, keepdims=True)
-        n = x.shape[-1]
-        var = jnp.sum((x - mu) ** 2, axis=-1, keepdims=True) / (n - 1)
-        return (x - mu) / jnp.sqrt(var + self.eps) * self.scale.value + self.bias.value
+import jax.numpy as jnp
+def my_layer_norm(x, gamma, beta, eps=1e-5):
+    mean = jnp.mean(x, axis=-1, keepdims=True)
+    n = x.shape[-1]
+    var = jnp.sum((x - mean) ** 2, axis=-1, keepdims=True) / (n - 1)
+    return gamma * (x - mean) / jnp.sqrt(var + eps) + beta
 ''')))
-holes.append(("layernorm", probe("layernorm", "normalises over the batch axis instead of features", '''
-import jax, jax.numpy as jnp
-from flax import nnx
-class LayerNorm(nnx.Module):
-    def __init__(self, dim, eps=1e-5, *, rngs=None):
-        self.eps = eps
-        self.scale = nnx.Param(jnp.ones((dim,)))
-        self.bias = nnx.Param(jnp.zeros((dim,)))
-    def __call__(self, x):
-        mu = jnp.mean(x, axis=0, keepdims=True)
-        var = jnp.var(x, axis=0, keepdims=True)
-        return (x - mu) / jnp.sqrt(var + self.eps) * self.scale.value + self.bias.value
+holes.append(("layernorm", probe("layernorm", "normalises over the batch axis", '''
+import jax.numpy as jnp
+def my_layer_norm(x, gamma, beta, eps=1e-5):
+    mean = jnp.mean(x, axis=0, keepdims=True)
+    var = jnp.var(x, axis=0, keepdims=True)
+    return gamma * (x - mean) / jnp.sqrt(var + eps) + beta
 ''')))
 
 print(f"\n{BOLD}=== vit_patch (upstream issue #21) ==={RESET}")
@@ -156,11 +144,18 @@ class PatchEmbedding(nnx.Module):
 print(f"\n{BOLD}=== adam ==={RESET}")
 holes.append(("adam", probe("adam", "no bias correction", '''
 import jax, jax.numpy as jnp
-def adam_update(params, grads, state, step, lr=1e-3, b1=0.9, b2=0.999, eps=1e-8):
-    m = jax.tree.map(lambda m_, g: b1*m_ + (1-b1)*g, state["m"], grads)
-    v = jax.tree.map(lambda v_, g: b2*v_ + (1-b2)*g*g, state["v"], grads)
-    p = jax.tree.map(lambda p_, m_, v_: p_ - lr*m_/(jnp.sqrt(v_)+eps), params, m, v)
-    return p, {"m": m, "v": v}
+class MyAdam:
+    def __init__(self, lr=1e-3, betas=(0.9, 0.999), eps=1e-8):
+        self.lr = lr; self.beta1, self.beta2 = betas; self.eps = eps
+    def init(self, params):
+        return {"m": jax.tree.map(jnp.zeros_like, params),
+                "v": jax.tree.map(jnp.zeros_like, params), "t": 0}
+    def update(self, params, grads, state):
+        t = state["t"] + 1
+        m = jax.tree.map(lambda m_, g: self.beta1*m_ + (1-self.beta1)*g, state["m"], grads)
+        v = jax.tree.map(lambda v_, g: self.beta2*v_ + (1-self.beta2)*g*g, state["v"], grads)
+        p = jax.tree.map(lambda p_, m_, v_: p_ - self.lr*m_/(jnp.sqrt(v_)+self.eps), params, m, v)
+        return p, {"m": m, "v": v, "t": t}
 ''')))
 
 print(f"\n{BOLD}=== ppo_loss ==={RESET}")

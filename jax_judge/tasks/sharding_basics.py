@@ -4,6 +4,7 @@ TASK = {
     "title": "Data-Parallel Mean with shard_map",
     "category": "JAX Fundamentals",
     "order": 11,
+    "number": "b_11",
     "difficulty": "Hard",
     "function_name": "data_parallel_mean",
     "hint": (

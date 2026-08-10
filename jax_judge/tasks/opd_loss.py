@@ -4,6 +4,7 @@ TASK = {
     "title": "OPD (On-Policy Distillation) Loss",
     "category": "RLHF & Preference Losses",
     "order": 4,
+    "number": "41",
     "difficulty": "Hard",
     "function_name": "opd_loss",
     "hint": (

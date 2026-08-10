@@ -4,6 +4,7 @@ TASK = {
     "title": "jit with static_argnames",
     "category": "JAX Fundamentals",
     "order": 3,
+    "number": "b_03",
     "difficulty": "Easy",
     "function_name": "masked_mean",
     "hint": (

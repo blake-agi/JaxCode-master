@@ -4,6 +4,7 @@ TASK = {
     "title": "Pairwise Distances with vmap",
     "category": "JAX Fundamentals",
     "order": 2,
+    "number": "b_02",
     "difficulty": "Easy",
     "function_name": "pairwise_sq_dist",
     "hint": (

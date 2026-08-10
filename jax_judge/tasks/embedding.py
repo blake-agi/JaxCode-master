@@ -4,6 +4,7 @@ TASK = {
     "title": "Embedding Layer",
     "category": "Core Ops & Layers",
     "order": 9,
+    "number": "18",
     "difficulty": "Easy",
     "function_name": "MyEmbedding",
     "hint": (

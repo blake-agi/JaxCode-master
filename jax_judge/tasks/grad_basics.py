@@ -4,6 +4,7 @@ TASK = {
     "title": "SGD Step with value_and_grad",
     "category": "JAX Fundamentals",
     "order": 1,
+    "number": "b_01",
     "difficulty": "Easy",
     "function_name": "sgd_step",
     "hint": (

@@ -4,6 +4,7 @@ TASK = {
     "title": "Simple Linear Layer",
     "category": "Core Ops & Layers",
     "order": 4,
+    "number": "03",
     "difficulty": "Medium",
     "function_name": "SimpleLinear",
     "hint": (

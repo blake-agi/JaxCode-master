@@ -4,6 +4,7 @@ TASK = {
     "title": "Implement Softmax",
     "category": "Core Ops & Layers",
     "order": 3,
+    "number": "02",
     "difficulty": "Easy",
     "function_name": "my_softmax",
     "hint": (

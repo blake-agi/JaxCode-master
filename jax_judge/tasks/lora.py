@@ -4,6 +4,7 @@ TASK = {
     "title": "LoRA (Low-Rank Adaptation)",
     "category": "Attention & Transformers",
     "order": 14,
+    "number": "26",
     "difficulty": "Medium",
     "function_name": "LoRALinear",
     "hint": (

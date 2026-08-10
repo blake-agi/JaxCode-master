@@ -4,6 +4,7 @@ TASK = {
     "title": "DPO (Direct Preference Optimization) Loss",
     "category": "RLHF & Preference Losses",
     "order": 1,
+    "number": "37",
     "difficulty": "Hard",
     "function_name": "dpo_loss",
     "hint": (

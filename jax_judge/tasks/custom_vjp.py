@@ -4,6 +4,7 @@ TASK = {
     "title": "Stable log(1+exp(x)) with custom_vjp",
     "category": "JAX Fundamentals",
     "order": 8,
+    "number": "b_08",
     "difficulty": "Hard",
     "function_name": "log1pexp",
     "hint": (
