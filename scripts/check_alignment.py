@@ -83,9 +83,13 @@ def _original_numbers() -> dict[str, str]:
 
 def load() -> tuple[dict, dict, dict]:
     if not ORIGINAL.exists():
-        print(f"{RED}Original repo not found: {ORIGINAL}{RESET}")
-        print(f"{DIM}Set TORCHCODE_ORIGINAL to point at it.{RESET}")
-        raise SystemExit(2)
+        # CI checks out this repo alone, so the sibling is usually absent there.
+        # Skipping is correct: the gate protects local edits, and a missing
+        # reference is not a failure of the code under test.
+        print(f"\n{YELLOW}⊘ Skipping alignment check — original repo not found at{RESET}")
+        print(f"  {DIM}{ORIGINAL}{RESET}")
+        print(f"  {DIM}Set TORCHCODE_ORIGINAL to enable it.{RESET}\n")
+        raise SystemExit(0)
     orig = _task_dicts(ORIGINAL / "torch_judge" / "tasks")
     mine = _task_dicts(ROOT / "jax_judge" / "tasks")
     return orig, mine, _original_numbers()

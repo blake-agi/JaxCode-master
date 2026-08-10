@@ -116,79 +116,82 @@ def _setup_cell(task: dict) -> str:
     return "\n".join(lines)
 
 
-def build_template(task_id: str, task: dict, num: int) -> dict:
-    rel = f"templates/{num}_{task_id}.ipynb"
-    emoji = DIFF_EMOJI.get(task["difficulty"], "⚪")
+def _build_notebook(
+    task_id: str,
+    task: dict,
+    num: str,
+    *,
+    header: str,
+    impl_cell: str,
+    demo_heading: str,
+    submit_cell: str,
+) -> dict:
+    """Shared skeleton for both notebook flavours.
 
-    header = (
-        f"{_badge(rel)}\n\n"
-        f"# {emoji} {task['difficulty']}: {task['title']}\n\n"
-        f"*{task['category']}*\n"
-        f"{task['description'].strip()}\n"
-    )
-
+    Templates and solutions differ only in their header, the implementation
+    cell (stub vs reference), the scratch-cell heading, and the submit cell.
+    Everything else — badge, Colab install, imports, demo handling — is common.
+    """
     cells = [
         _markdown(header),
         _code(INSTALL_CELL),
         _code(_setup_cell(task)),
-        _code("# ✏️ YOUR IMPLEMENTATION HERE\n\n" + task["stub"].strip()),
+        _code(impl_cell),
     ]
-
     if task.get("demo"):
-        cells.append(
-            _code(
-                "# 🔍 Scratch cell — poke at your implementation\n"
-                + task["demo"].strip()
-            )
-        )
+        cells.append(_code(f"{demo_heading}\n{task['demo'].strip()}"))
+    cells.append(_code(submit_cell))
+    return _notebook(cells)
 
-    cells.append(
-        _code(
+
+def build_template(task_id: str, task: dict, num: str) -> dict:
+    rel = f"templates/{num}_{task_id}.ipynb"
+    emoji = DIFF_EMOJI.get(task["difficulty"], "⚪")
+    return _build_notebook(
+        task_id, task, num,
+        header=(
+            f"{_badge(rel)}\n\n"
+            f"# {emoji} {task['difficulty']}: {task['title']}\n\n"
+            f"*{task['category']}*\n"
+            f"{task['description'].strip()}\n"
+        ),
+        impl_cell="# ✏️ YOUR IMPLEMENTATION HERE\n\n" + task["stub"].strip(),
+        demo_heading="# 🔍 Scratch cell — poke at your implementation",
+        submit_cell=(
             "# ✅ SUBMIT — run this cell to check your solution\n"
             "from jax_judge import check, hint, solution\n\n"
             f'check("{task_id}")\n\n'
             f'# hint("{task_id}")      # stuck? nudge without the answer\n'
             f'# solution("{task_id}")  # spoiler: the reference implementation'
-        )
+        ),
     )
-    return _notebook(cells)
 
 
-def build_solution(task_id: str, task: dict, num: int) -> dict:
+def build_solution(task_id: str, task: dict, num: str) -> dict:
     rel = f"solutions/{num}_{task_id}_solution.ipynb"
     emoji = DIFF_EMOJI.get(task["difficulty"], "⚪")
-
-    header = (
-        f"{_badge(rel)}\n\n"
-        f"# {emoji} Solution: {task['title']}\n\n"
-        f"*{task['category']} · {task['difficulty']}*\n\n"
-        f"Reference implementation. Try it yourself in "
-        f"`{num}_{task_id}.ipynb` first.\n\n"
-        "---\n"
-        f"{task['description'].strip()}\n"
-    )
-
-    cells = [
-        _markdown(header),
-        _code(INSTALL_CELL),
-        _code(_setup_cell(task)),
-        _code("# ✅ REFERENCE SOLUTION\n\n" + task["solution"].strip()),
-    ]
-
-    if task.get("demo"):
-        cells.append(_code("# 🔍 Verify\n" + task["demo"].strip()))
-
-    cells.append(
-        _code(
+    return _build_notebook(
+        task_id, task, num,
+        header=(
+            f"{_badge(rel)}\n\n"
+            f"# {emoji} Solution: {task['title']}\n\n"
+            f"*{task['category']} · {task['difficulty']}*\n\n"
+            f"Reference implementation. Try it yourself in "
+            f"`{num}_{task_id}.ipynb` first.\n\n"
+            "---\n"
+            f"{task['description'].strip()}\n"
+        ),
+        impl_cell="# ✅ REFERENCE SOLUTION\n\n" + task["solution"].strip(),
+        demo_heading="# 🔍 Verify",
+        submit_cell=(
             "# Run the judge against the reference solution\n"
             "from jax_judge import check\n\n"
             f'check("{task_id}")'
-        )
+        ),
     )
-    return _notebook(cells)
 
 
-def build_welcome(numbered: list[tuple[int, str, dict]]) -> dict:
+def build_welcome(numbered: list[tuple[str, str, dict]]) -> dict:
     total = len(numbered)
     by_diff: dict[str, int] = {}
     for _, _, task in numbered:
@@ -275,7 +278,7 @@ README_START = "<!-- PROBLEMS:START -->"
 README_END = "<!-- PROBLEMS:END -->"
 
 
-def build_readme_table(numbered: list[tuple[int, str, dict]]) -> str:
+def build_readme_table(numbered: list[tuple[str, str, dict]]) -> str:
     by_diff: dict[str, int] = {}
     for _, _, task in numbered:
         by_diff[task["difficulty"]] = by_diff.get(task["difficulty"], 0) + 1
@@ -309,7 +312,7 @@ def build_readme_table(numbered: list[tuple[int, str, dict]]) -> str:
     return "\n".join(lines).strip()
 
 
-def render_readme(numbered: list[tuple[int, str, dict]]) -> str | None:
+def render_readme(numbered: list[tuple[str, str, dict]]) -> str | None:
     """README text with the problem table refreshed, or None if markers are absent."""
     if not README.exists():
         return None

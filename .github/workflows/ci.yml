@@ -32,6 +32,11 @@ jobs:
       - name: Test suites must reject wrong implementations
         run: python scripts/probe_tests.py
 
+      # Skips itself when the sibling PyTorch repo is absent, which is the
+      # normal case in CI. Enforced locally via `make align`.
+      - name: Ported problems must still match the PyTorch original
+        run: python scripts/check_alignment.py
+
       - name: Notebooks must be in sync with the task definitions
         run: python scripts/generate_notebooks.py --check
 

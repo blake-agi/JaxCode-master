@@ -45,13 +45,11 @@ def parse_notebook_template(filepath: str) -> dict:
             "initial_code": "# Error loading template code."
         }
 
-# Template filenames whose stem doesn't match their jax_judge task module name
-TASK_ID_ALIASES = {}
-
 def get_all_templates(templates_dir: str = "../templates") -> dict:
     """
     Returns a dictionary mapping task_ids to their extracted template data.
-    task_id is inferred from the filename (e.g., '01_relu.ipynb' -> 'relu').
+    task_id is inferred from the filename: '01_relu.ipynb' -> 'relu', and
+    'b_01_grad_basics.ipynb' -> 'grad_basics' for the JAX-only problems.
     """
     templates = {}
     
@@ -64,12 +62,12 @@ def get_all_templates(templates_dir: str = "../templates") -> dict:
         if filename == "00_welcome.ipynb":
             continue
             
-        # Extract task_id (e.g. 01_relu.ipynb -> relu)
-        match = re.match(r"^\d+_(.+)\.ipynb$", filename)
+        # 01_relu.ipynb -> relu; b_01_grad_basics.ipynb -> grad_basics.
+        # The b_ prefix marks the JAX-only problems, which have no PyTorch
+        # counterpart and therefore no number in the original repo.
+        match = re.match(r"^(?:b_)?\d+_(.+)\.ipynb$", filename)
         if match:
-            task_id = match.group(1)
-            task_id = TASK_ID_ALIASES.get(task_id, task_id)
-            templates[task_id] = parse_notebook_template(filepath)
+            templates[match.group(1)] = parse_notebook_template(filepath)
             
     return templates
 
