@@ -271,7 +271,7 @@ Create `jax_judge/tasks/my_task.py`:
 TASK = {
     "title": "My Problem",
     "category": "Core Ops & Layers",   # must match _registry.CATEGORIES
-    "order": 13,                        # position within the category
+    "number": "b_12",                   # notebook number; b_* = JAX-only problem
     "difficulty": "Medium",             # Easy | Medium | Hard
     "function_name": "my_fn",           # symbol the judge looks for
     "hint": "Name the API and the shape trick, without giving the answer.",
@@ -285,8 +285,14 @@ TASK = {
 }
 ```
 
-`{fn}` is replaced with `function_name` before the test runs. The registry
-auto-discovers the module — no imports to register.
+`{fn}` is replaced with `function_name` before the test runs, and each test sees
+**only** `function_name` plus anything listed in `extra_names` — see
+`jax_judge/_contract.py`. The registry auto-discovers the module, so there is
+nothing to import or register.
+
+The `number` is the curriculum order and the notebook filename. The 41 problems
+ported from PyTorch keep the original's numbers so the two repos line up; new
+JAX-only problems take the next free `b_*`.
 
 Then:
 
@@ -306,12 +312,13 @@ Gotcha: each test snippet is standalone and must do its own imports.
 ```bash
 make verify      # every reference solution vs its own tests
 make probe       # attack every test suite with wrong implementations
+make align       # assert the 41 ported problems still match the PyTorch original
 make notebooks   # regenerate all notebooks from task definitions
 make smoke       # execute notebooks in a real Jupyter kernel
-make check       # verify + probe + notebooks --check (what CI runs)
+make check       # verify + probe + align + notebooks --check (what CI runs)
 ```
 
-### Three layers of validation
+### Four layers of validation
 
 A task whose published solution fails its own tests is worse than no task, but
 passing your own tests only proves *self-consistency*. Each layer catches what
@@ -321,6 +328,7 @@ the one above it cannot:
 |---|---|---|
 | `make verify` | all 52 solutions pass their own tests | a formula wrong in **both** solution and tests |
 | `make probe` | the tests **reject** wrong answers | a misconception shared by every check |
+| `make align` | the ported problems still match the PyTorch original | nothing about correctness |
 | `crosscheck_vs_torch.py` | agreement with an independent implementation | — |
 
 `make probe` attacks each suite with deliberately-broken implementations —

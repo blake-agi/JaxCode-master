@@ -37,7 +37,10 @@ dev = [
 
 [tool.setuptools.packages.find]
 include = ["jax_judge*"]
-exclude = ["labextension*", "scripts*", "templates*", "solutions*", "jupyter_config*", "web*", "api*"]
+exclude = [
+    "labextension*", "scripts*", "templates*", "solutions*",
+    "jupyter_config*", "web*", "api*", "jax_pytorch_comparison*",
+]
 
 [tool.setuptools.dynamic]
 version = {attr = "jax_judge._version.__version__"}

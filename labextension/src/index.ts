@@ -43,13 +43,17 @@ function getFilename(path: string): string {
   return path.split('/').pop() || '';
 }
 
-/** Infer task_id from notebook path (e.g. 01_relu.ipynb -> relu, 39_ppo_loss.ipynb -> ppo_loss). */
+/** Infer task_id from a notebook path.
+ *  01_relu.ipynb          -> relu
+ *  39_ppo_loss.ipynb      -> ppo_loss
+ *  b_01_grad_basics.ipynb -> grad_basics   (b_* = JAX-only problem)
+ */
 function getTaskIdFromPath(path: string): string | null {
   const base = getFilename(path);
   if (!base.endsWith('.ipynb')) return null;
   const name = base.replace(/\.ipynb$/i, '');
   if (name === '00_welcome') return null;
-  const taskId = name.replace(/^\d+_/, '');
+  const taskId = name.replace(/^(?:b_)?\d+_/, '');
   return taskId || null;
 }
 

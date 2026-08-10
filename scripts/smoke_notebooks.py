@@ -81,7 +81,13 @@ def main() -> int:
     d = ROOT / ("templates" if args.templates else "solutions")
     paths = sorted(p for p in d.glob("*.ipynb") if not p.name.startswith("00_"))
     if args.numbers:
-        paths = [p for p in paths if p.name.split("_")[0] in args.numbers]
+        # Notebook labels are "01".."41" and "b_01".."b_11", so the label is not
+        # simply everything before the first underscore.
+        label = re.compile(r"^((?:b_)?\d+)_")
+        def _label(p: Path) -> str:
+            m = label.match(p.name)
+            return m.group(1) if m else ""
+        paths = [p for p in paths if _label(p) in args.numbers]
 
     if not paths:
         print(f"{RED}No notebooks matched{RESET}")
