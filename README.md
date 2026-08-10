@@ -305,13 +305,44 @@ Gotcha: each test snippet is standalone and must do its own imports.
 
 ```bash
 make verify      # every reference solution vs its own tests
+make probe       # attack every test suite with wrong implementations
 make notebooks   # regenerate all notebooks from task definitions
-make smoke       # execute solution notebooks in a real Jupyter kernel
-make check       # verify + assert notebooks are not stale (CI)
+make smoke       # execute notebooks in a real Jupyter kernel
+make check       # verify + probe + notebooks --check (what CI runs)
 ```
 
-`make verify` is the important one. A task whose own published solution fails
-its own tests is worse than no task at all, so it runs on every change.
+### Three layers of validation
+
+A task whose published solution fails its own tests is worse than no task, but
+passing your own tests only proves *self-consistency*. Each layer catches what
+the one above it cannot:
+
+| Layer | Proves | Blind spot |
+|---|---|---|
+| `make verify` | all 52 solutions pass their own tests | a formula wrong in **both** solution and tests |
+| `make probe` | the tests **reject** wrong answers | a misconception shared by every check |
+| `crosscheck_vs_torch.py` | agreement with an independent implementation | — |
+
+`make probe` attacks each suite with deliberately-broken implementations —
+attention without the `1/sqrt(d_k)` scale, a mask multiplied after the softmax
+instead of added before it, Adam without bias correction, DPO ignoring the
+reference model. Two of the attacks come from **open bugs in the upstream
+PyTorch project** ([#17](https://github.com/duoan/TorchCode/issues/17),
+[#21](https://github.com/duoan/TorchCode/issues/21)), where those wrong
+implementations pass. Here they are rejected, and the attacks are permanent
+regression tests.
+
+The outermost layer lives in [`jax_pytorch_comparison/`](jax_pytorch_comparison/),
+which also holds a side-by-side PyTorch→JAX notebook. It is deliberately outside
+the package so `jax_judge` never depends on `torch`.
+
+### Stack
+
+JAX + **Flax NNX** + Optax — the current Google DeepMind stack. Flax Linen is in
+maintenance mode and [dm-haiku has been maintenance-only since
+2023](https://github.com/google-deepmind/dm-haiku), so neither appears here.
+Optimizers and losses are implemented by hand rather than imported from Optax:
+in an interview you are asked to *write* Adam, not call it.
 
 ---
 

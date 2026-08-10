@@ -7,14 +7,15 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "cross_entropy_loss",
     "hint": (
-        "Do log-softmax by hand: shift = jnp.max(logits, -1, keepdims=True), then "
-        "log_probs = (logits - shift) - jnp.log(jnp.sum(jnp.exp(logits - shift), -1, "
-        "keepdims=True)). Pick out the target entry with "
-        "jnp.take_along_axis(log_probs, targets[..., None], axis=-1)[..., 0]. "
-        "Label smoothing is a convex blend: (1-a)*nll + a*(-log_probs.mean(-1)) — no "
-        "one-hot matrix needed. For ignore_index, build safe = jnp.where(valid, targets, 0) "
-        "BEFORE the gather (an out-of-range index silently clamps in JAX), zero the "
-        "per-token losses with jnp.where, and divide by the number of valid tokens."
+        "Never log(softmax(x)) — compute log-softmax in one step, subtracting the "
+        "row max and then the log-sum-exp of the shifted logits. Pull out the "
+        "target's log-probability by gathering that index rather than "
+        "materialising a one-hot matrix. Label smoothing is a convex blend of the "
+        "target's NLL and the mean log-probability over the vocabulary. For "
+        "ignore_index the trap is that an out-of-range index does NOT raise in "
+        "JAX — it silently clamps — so sanitise the indices before gathering, "
+        "then mask the per-token losses and divide by the number of valid tokens, "
+        "not the total."
     ),
     "description": r"""
 Implement **cross-entropy loss directly from logits**, with optional label

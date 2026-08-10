@@ -7,11 +7,12 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "my_softmax",
     "hint": (
-        "Subtract the max along `axis` before exponentiating: "
-        "z = x - jnp.max(x, axis=axis, keepdims=True). keepdims=True is what makes "
-        "the broadcast line up. Then e = jnp.exp(z) and return "
-        "e / jnp.sum(e, axis=axis, keepdims=True). The shift cancels exactly in the "
-        "ratio, so the answer is unchanged — only the intermediate magnitudes shrink."
+        "exp() overflows in float32 above about 88, so shift before "
+        "exponentiating: subtract the max along `axis` first. The shift cancels "
+        "exactly in the numerator/denominator ratio, so the result is unchanged — "
+        "only the intermediate magnitudes shrink. Watch keepdims on both "
+        "reductions: without it the reduced array loses the axis and will not "
+        "broadcast back against x."
     ),
     "description": r"""
 Implement **softmax** from scratch, numerically stably.

@@ -7,14 +7,13 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "BatchNorm",
     "hint": (
-        "Reduce over every axis EXCEPT the feature axis: for (N, C) that is "
-        "axis=0, for (N, H, W, C) that is (0, 1, 2). Build it generically with "
-        "reduce_axes = tuple(range(x.ndim - 1)). In training mode normalise with "
-        "the batch stats and then update the running buffers in place — "
-        "self.running_mean[...] = momentum * self.running_mean[...] + "
-        "(1 - momentum) * batch_mean. In eval mode use the running buffers and "
-        "update nothing. Store the buffers as nnx.BatchStat, not nnx.Param, so "
-        "the optimizer never sees them."
+        "Normalise over every axis EXCEPT the feature axis — for (N, C) that is "
+        "axis 0, for (N, H, W, C) it is the first three. Derive the axes from "
+        "x.ndim rather than hard-coding them, or the layer only works for one "
+        "input rank. Training and eval differ in TWO ways: which statistics you "
+        "normalise with, and whether you write to the running buffers at all. "
+        "Store those buffers as nnx.BatchStat rather than nnx.Param so the "
+        "optimizer never updates them."
     ),
     "description": r"""
 Implement **Batch Normalization** with running statistics.

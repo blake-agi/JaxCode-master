@@ -7,14 +7,12 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "accumulate_grads",
     "hint": (
-        "Start from a zero tree: acc = jax.tree.map(jnp.zeros_like, params). For "
-        "each micro-batch pull n = jax.tree.leaves(batch)[0].shape[0], call "
-        "loss, g = grad_fn(params, batch), and fold in with "
-        "jax.tree.map(lambda a, b: a + n * b, acc, g). At the end divide the whole "
-        "tree by sum(n). The n weight is the entire problem: grad_fn returns the "
-        "MEAN over its micro-batch, and an unweighted mean of means only equals "
-        "the full-batch mean when every n is identical. n is a Python int (shapes "
-        "are static), so the arithmetic stays jit-friendly."
+        "Accumulate into a zero-filled copy of the params tree. The whole problem "
+        "is the weighting: grad_fn returns the MEAN over its micro-batch, and an "
+        "unweighted mean of means equals the full-batch mean only when every "
+        "micro-batch is the same size. Weight each micro-batch's gradient by its "
+        "row count and divide by the total at the end. Batch sizes are static "
+        "shapes, so that arithmetic is plain Python and stays jit-friendly."
     ),
     "description": r"""
 Accumulate gradients across a list of micro-batches into **one** gradient

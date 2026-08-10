@@ -7,15 +7,17 @@ TASK = {
     "difficulty": "Hard",
     "function_name": "conv2d",
     "hint": (
-        "Two steps. (1) Padding: for 'VALID' do nothing and out = (H - KH)//sh + 1. "
-        "For 'SAME' the output is ceil(H/sh), so pad_total = max((out-1)*sh + KH - H, 0) "
-        "and you split it pad_lo = pad_total // 2, pad_hi = pad_total - pad_lo — the "
-        "EXTRA row goes on the bottom. (2) Gather the windows without a Python loop over "
-        "pixels: rows = (jnp.arange(out_h)*sh)[:, None] + jnp.arange(KH)[None, :] gives an "
-        "(out_h, KH) index matrix, same for cols; then x[:, rows][:, :, :, cols] gathers "
-        "every patch at once. Contract with jnp.einsum('nhwijc,ijco->nhwo', patches, w). "
-        "An equivalent trick: loop over the KH*KW kernel taps instead of the pixels and "
-        "accumulate strided slices x[:, i:i+out_h*sh:sh, j:j+out_w*sw:sw, :] @ w[i, j]."
+        "Two steps. (1) Padding: 'VALID' pads nothing; for 'SAME' the output is "
+        "ceil(H / stride), so work out the total padding needed to reach that and "
+        "split it between top and bottom — when it is odd, the extra row goes on "
+        "the BOTTOM (this is the convention torch and XLA both use, and getting "
+        "it backwards shifts your whole feature map by one). (2) Gather all the "
+        "windows at once instead of looping over pixels: build an (out_h, KH) "
+        "matrix of row indices by broadcasting a strided arange against an arange "
+        "over the kernel, do the same for columns, and use them to index x. Then "
+        "contract patches against the kernel with a single jnp.einsum. An "
+        "equivalent route is to loop over the KH*KW kernel taps — not the pixels "
+        "— accumulating strided slices."
     ),
     "description": r"""
 Implement a 2-D **convolution** (really a cross-correlation, like every deep

@@ -9,7 +9,7 @@ COMPOSE ?= $(shell \
 
 PYTHON ?= python3
 
-.PHONY: run run-build stop clean setup-local notebooks verify smoke check help
+.PHONY: run run-build stop clean setup-local notebooks verify probe smoke check help
 
 help:
 	@echo "JAXCode"
@@ -20,8 +20,9 @@ help:
 	@echo ""
 	@echo "  make notebooks    Regenerate all notebooks from the task definitions"
 	@echo "  make verify       Run every task's reference solution against its tests"
-	@echo "  make smoke        Execute the solution notebooks in a real kernel"
-	@echo "  make check        verify + notebooks --check (what CI runs)"
+	@echo "  make probe        Attack each test suite with wrong implementations"
+	@echo "  make smoke        Execute the notebooks in a real Jupyter kernel"
+	@echo "  make check        verify + probe + notebooks --check (what CI runs)"
 	@echo ""
 	@echo "  make setup-local  Copy notebooks into ./notebooks for local Jupyter"
 
@@ -57,9 +58,12 @@ notebooks:
 verify:
 	$(PYTHON) scripts/verify_tasks.py
 
+probe:
+	$(PYTHON) scripts/probe_tests.py
+
 smoke:
 	$(PYTHON) scripts/smoke_notebooks.py
 	$(PYTHON) scripts/smoke_notebooks.py --templates
 
-check: verify
+check: verify probe
 	$(PYTHON) scripts/generate_notebooks.py --check

@@ -27,6 +27,11 @@ jobs:
       - name: Every reference solution must pass its own tests
         run: python scripts/verify_tasks.py
 
+      # Self-consistency (above) cannot catch a test suite that accepts wrong
+      # answers, so attack every suite with deliberately-broken implementations.
+      - name: Test suites must reject wrong implementations
+        run: python scripts/probe_tests.py
+
       - name: Notebooks must be in sync with the task definitions
         run: python scripts/generate_notebooks.py --check
 
