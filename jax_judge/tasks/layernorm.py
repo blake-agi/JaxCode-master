@@ -7,24 +7,28 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "LayerNorm",
     "hint": (
-        "Reduce over the LAST axis with keepdims=True so broadcasting works: "
-        "mu = x.mean(-1, keepdims=True), var = x.var(-1, keepdims=True). Then "
-        "(x - mu) / sqrt(var + eps) * scale + bias. Use the BIASED variance "
-        "(divide by D, which is what jnp.var does by default) — not the "
-        "Bessel-corrected D-1. Initialise scale to ones and bias to zeros so the "
-        "layer starts as a pure normalization."
+        "Reduce over the LAST axis only, and pass keepdims=True — without it the "
+        "reduced array has one fewer axis and the subtraction broadcasts against "
+        "the wrong dimension. jnp.var already gives you the biased (divide-by-D) "
+        "variance you want, so you do not need ddof at all. Initialise scale to "
+        "ones and bias to zeros so an untrained layer is a pure normalization, "
+        "and keep eps under the square root."
     ),
     "description": r"""
 Implement **Layer Normalization** as an `nnx.Module`.
 
 $$y = \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}} \cdot \gamma + \beta$$
 
-where $\mu$ and $\sigma^2$ are the mean and variance over the **last** axis,
-computed **per sample**.
+where $\mu$ and $\sigma^2$ are the mean and variance over the **last** axis only.
+Every other axis is independent: for a `(B, T, D)` transformer activation you get
+$B \times T$ separate means and variances, one per token, and the batch and time
+axes are never reduced over.
 
 ### Rules
 - Subclass `nnx.Module`; do **not** use `nnx.LayerNorm`
-- Signature: `LayerNorm(dim, *, eps=1e-5, rngs=None)`
+- Signature: `LayerNorm(dim, *, eps=1e-5, rngs=None)` — `rngs` is unused (the
+  params are constants, not random), but every layer in this repo takes it so
+  modules stay interchangeable
 - `self.scale` initialised to ones, `self.bias` to zeros, both `nnx.Param`
 - Normalise over the last axis only
 - Use the **biased** variance (divide by `D`)
@@ -42,12 +46,22 @@ This is the question that always follows.
 
 Because LayerNorm never looks across the batch, it behaves identically at train
 and inference time and needs no running statistics — which is exactly why every
-transformer uses it. Sequence models have variable-length batches where
-batch-wise statistics would be meaningless.
+transformer uses it. Sequence batches are padded to a common length, so
+batch-wise statistics would be contaminated by however many pad positions
+happened to land in the batch.
 
-Watch the `eps` placement: $\sqrt{\sigma^2 + \epsilon}$, not
-$\sqrt{\sigma^2} + \epsilon$. The second form is a real bug that still passes
-most casual tests.
+### Two conventions that are easy to get wrong
+**`eps` placement.** It goes *inside*: $\sqrt{\sigma^2 + \epsilon}$, not
+$\sqrt{\sigma^2} + \epsilon$. The outside form still produces finite,
+plausible-looking output on ordinary data — it only bites when $\sigma^2$ is
+tiny, which is precisely the case `eps` exists to handle.
+
+**Biased variance.** Divide by $D$, not $D-1$. `jnp.var` and `np.var` do this by
+default; `torch.var` does *not* — it defaults to the Bessel-corrected $D-1$ — so
+a line-by-line port of PyTorch idiom silently normalises by the wrong denominator.
+At $D = 768$ that is a 0.07% error in the divisor: far too small for any
+tolerance-based test to catch, and exactly the kind of drift you hunt for when
+your logits refuse to match a reference implementation.
 """,
     "stub": '''import jax
 import jax.numpy as jnp

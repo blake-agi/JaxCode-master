@@ -140,7 +140,7 @@ reporting a diff.
 ## 📚 Problems
 
 <!-- PROBLEMS:START -->
-**52 problems** — 🟢 15 Easy · 🟡 25 Medium · 🔴 12 Hard
+**52 problems** — 🟢 14 Easy · 🟡 27 Medium · 🔴 11 Hard
 
 
 ### JAX Fundamentals (11)
@@ -200,7 +200,7 @@ reporting a diff.
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
 | 38 | [Cross-Entropy Loss from Logits](templates/38_cross_entropy.ipynb) | 🟢 Easy | `cross_entropy` |
-| 39 | [Linear Regression: Closed Form vs Gradient Descent](templates/39_linear_regression.ipynb) | 🟢 Easy | `linear_regression` |
+| 39 | [Linear Regression: Closed Form vs Gradient Descent](templates/39_linear_regression.ipynb) | 🟡 Medium | `linear_regression` |
 | 40 | [Adam Optimizer](templates/40_adam.ipynb) | 🟡 Medium | `adam` |
 | 41 | [Cosine LR Schedule with Warmup](templates/41_cosine_lr.ipynb) | 🟢 Easy | `cosine_lr` |
 | 42 | [Global-Norm Gradient Clipping](templates/42_gradient_clipping.ipynb) | 🟡 Medium | `gradient_clipping` |
@@ -222,7 +222,7 @@ reporting a diff.
 |---|---|---|---|
 | 49 | [DPO (Direct Preference Optimization) Loss](templates/49_dpo_loss.ipynb) | 🟡 Medium | `dpo_loss` |
 | 50 | [GRPO (Group Relative Policy Optimization) Loss](templates/50_grpo_loss.ipynb) | 🔴 Hard | `grpo_loss` |
-| 51 | [PPO Clipped Surrogate Loss](templates/51_ppo_loss.ipynb) | 🔴 Hard | `ppo_loss` |
+| 51 | [PPO Clipped Surrogate Loss](templates/51_ppo_loss.ipynb) | 🟡 Medium | `ppo_loss` |
 | 52 | [OPD (On-Policy Distillation) Loss](templates/52_opd_loss.ipynb) | 🔴 Hard | `opd_loss` |
 <!-- PROBLEMS:END -->
 

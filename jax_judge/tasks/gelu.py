@@ -7,10 +7,12 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "gelu",
     "hint": (
-        "Exact: 0.5 * x * (1 + erf(x / sqrt(2))) using jax.scipy.special.erf. "
-        "Tanh approximation: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x**3))). "
-        "Branch on the `approximate` flag with a plain Python if — it is a static "
-        "Python bool, not a traced value, so this is fine under jit."
+        "Both formulas are written out in the description — transcribe them "
+        "literally, including the 0.044715 and the sqrt(2/pi). Branch on the "
+        "`approximate` flag with a plain Python `if`: it is a static Python bool, "
+        "not a traced array, so this is jit-safe (declare it with "
+        "static_argnames if you jit the function yourself). Use "
+        "jax.scipy.special.erf for the exact form — jnp has no erf."
     ),
     "description": r"""
 Implement **GELU** (Gaussian Error Linear Unit) in both of its standard forms.
@@ -36,13 +38,23 @@ def gelu(x, approximate=False):
 ### Why two versions exist
 $\Phi$ is the Gaussian CDF, so GELU weights each input by the probability that a
 standard normal falls below it — a smooth, probabilistic gate, unlike ReLU's hard
-cutoff. The tanh form exists purely because `erf` was slow on the hardware of
-2018; GPT-2 and BERT both shipped the approximation, so their published weights
-are tied to it. The two agree to about `1e-3`.
+cutoff. The tanh form was published alongside the exact one in the original 2016
+paper as a cheaper stand-in for `erf`, and it is what BERT and GPT-2 actually
+shipped — so their released weights were trained against *that* curve.
+
+The two agree closely but not exactly: the largest gap is about **4.7e-4**, near
+$|x| \approx 2.7$, shrinking to zero at the origin and in both tails. Small
+enough to ignore when training from scratch, large enough to notice when you are
+chasing a logit mismatch against a reference implementation.
+
+### The default that catches people
+`jax.nn.gelu` defaults to `approximate=True` — the **tanh** form. PyTorch's
+`F.gelu` defaults to the exact one. This task follows the PyTorch convention
+(`approximate=False` by default), so read the flag carefully.
 
 Being asked "why does GELU beat ReLU?" is common: it is smooth everywhere
-(so gradients don't vanish abruptly at 0) and it is non-monotonic, allowing small
-negative activations to survive.
+(so the gradient does not jump discontinuously at 0) and it is non-monotonic,
+letting small negative activations survive instead of hard-zeroing them.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -111,10 +123,11 @@ expected = jax.nn.gelu(x, approximate=True)
 
 assert jnp.allclose(out, expected, atol=1e-5), 'Tanh form disagrees with jax.nn.gelu'
 
-# The two forms must actually differ, but only slightly.
+# The two forms must actually differ, but only slightly: the largest possible
+# gap between them is ~4.7e-4, anywhere on the real line.
 exact = {fn}(x, approximate=False)
 gap = float(jnp.max(jnp.abs(out - exact)))
-assert gap < 1e-2, f'Approximation is {gap} away from exact — too far'
+assert gap < 1e-3, f'Approximation is {gap} away from exact — too far'
 """,
         },
         {

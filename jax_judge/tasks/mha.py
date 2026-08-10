@@ -62,8 +62,9 @@ work. What you buy is $H$ independent similarity subspaces: one head can track
 syntactic agreement while another tracks positional offset, instead of a single
 softmax being forced to average those signals into one distribution. The cost is
 that each head sees a $d_h$-dimensional space, so very large $H$ makes each head
-too narrow to represent anything — which is why $d_h$ sits at 64–128 in
-essentially every production model, and $H$ grows with $d_{model}$.
+too narrow to represent anything. That tension is why $d_h$ does *not* grow with
+model size: it is pinned at 64 or 128 in most production models (256 at the
+outside), and $H$ is what scales with $d_{model}$ instead.
 """,
     "stub": '''import jax
 import jax.numpy as jnp

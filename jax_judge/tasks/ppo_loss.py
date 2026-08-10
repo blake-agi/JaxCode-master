@@ -4,15 +4,18 @@ TASK = {
     "title": "PPO Clipped Surrogate Loss",
     "category": "RLHF & Preference Losses",
     "order": 3,
-    "difficulty": "Hard",
+    "difficulty": "Medium",
     "function_name": "ppo_loss",
     "hint": (
-        "ratio = exp(new_logps - old_logps) — a ratio of probabilities, computed "
-        "in log space. Then take the elementwise minimum of ratio * advantages "
-        "and clip(ratio, 1-eps, 1+eps) * advantages, average it, and NEGATE, "
-        "because the surrogate is something you maximise but a loss is something "
-        "you minimise. Note the min is over the two signed products, not over "
-        "the ratios."
+        "Five lines, three of which are easy to get subtly wrong. The ratio is a "
+        "ratio of probabilities but you are handed log-probs, so form it in log "
+        "space — a real sequence log-prob is around -800 and exp() of that is 0. "
+        "The min() is over the two signed PRODUCTS, not over the two ratios: "
+        "clipping the ratio first and multiplying afterwards is a different "
+        "function, and it differs exactly where the advantage is negative. And "
+        "the formula in the spec is a surrogate you maximise while the thing you "
+        "return is a loss you minimise — the test with ratio 1 catches that sign "
+        "immediately."
     ),
     "description": r"""
 Implement PPO's **clipped surrogate objective**.
@@ -58,10 +61,14 @@ a policy that had drifted badly with no gradient to recover. The `min` deliberat
 keeps the penalty live in exactly the direction where you want it live.
 
 ### The trap
-$r_t$ is 1 at the start of every PPO epoch (the new policy *is* the old policy),
-so the first inner-epoch step is unclipped and the loss equals $-\bar{A}$.
-Clipping only starts biting on later inner epochs, as $\theta$ moves away from
-$\theta_{\text{old}}$.
+$\pi_{\text{old}}$ is frozen when the rollouts are collected, so on the very
+first gradient step of an update $\theta = \theta_{\text{old}}$, every $r_t$ is
+exactly 1, nothing clips, and the loss is just $-\bar{A}$. Clipping only starts
+biting as later minibatches and inner epochs push $\theta$ away. Two
+consequences worth saying out loud: a fresh-rollout loss that is not
+$-\bar{A}$ is a bug in your ratio or your sign, and if you only ever take one
+inner epoch, the clip is dead code and PPO degenerates to vanilla policy
+gradient.
 """,
     "stub": '''import jax
 import jax.numpy as jnp

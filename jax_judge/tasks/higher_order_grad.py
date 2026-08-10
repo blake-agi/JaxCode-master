@@ -7,10 +7,11 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "hessian_matrix",
     "hint": (
-        "jax.jacrev(f) gives the (D,) gradient; differentiating THAT gives the "
-        "(D, D) Hessian. Use jax.jacfwd(jax.jacrev(f)) — forward-over-reverse is "
-        "the efficient order, because the inner reverse pass gives you D outputs "
-        "and forward mode costs one pass per input. Then just evaluate it at x."
+        "jax.jacrev(f) is a FUNCTION, not a value: for f: (D,) -> scalar it "
+        "evaluates to the (D,) gradient, so differentiating that function again "
+        "gives the (D, D) Hessian. Compose both transforms first, then call the "
+        "result once at x. As for which transform goes on the outside, count "
+        "passes: the inner one sees a single output, the outer one sees D."
     ),
     "description": r"""
 Return the **Hessian matrix** of a scalar function at a point.
@@ -21,9 +22,12 @@ Given `f: (D,) -> scalar` and `x: (D,)`, return the `(D, D)` matrix of second
 derivatives.
 
 ### Rules
-- Compose `jax.jacfwd` and `jax.jacrev` — do not use `jax.hessian`
+- Compose `jax.jacfwd` and `jax.jacrev` — do not call `jax.hessian`
 - Use the **forward-over-reverse** order: `jacfwd(jacrev(f))`
-- Must work for any `D` and stay `jit`-able
+- Must work for any `D`
+- `f` is a Python callable, so it is not a traceable argument: the function is
+  `jit`-able with `f` closed over (or marked `static_argnums=0`), not by
+  `jax.jit(hessian_matrix)` directly
 
 ### Signature
 ```python
@@ -44,6 +48,18 @@ This is the real question behind the problem. For `f: R^D -> R`:
 
 Reverse mode is cheap in the number of **outputs**; forward mode is cheap in the
 number of **inputs**. Being able to say that out loud is the point.
+
+You are also reimplementing the library: `jax.hessian(fun)` is defined as
+`jacfwd(jacrev(fun))`, for exactly this reason. Once you have written it, the
+follow-up worth having an answer to is why you would ever *not* form the dense
+`(D, D)` matrix — for large `D` you never materialize it and use
+Hessian-vector products instead, one `jvp` through one `grad`:
+
+```python
+hvp = lambda f, x, v: jax.jvp(jax.grad(f), (x,), (v,))[1]
+```
+
+which costs `O(1)` passes per vector rather than `D`.
 """,
     "stub": '''import jax
 import jax.numpy as jnp

@@ -7,12 +7,13 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "Linear",
     "hint": (
-        "Store parameters as nnx.Param(...) attributes in __init__, and draw the "
-        "weights with jax.random.normal(rngs.params(), (din, dout)) — calling "
-        "rngs.params() yields a fresh key each time. Scale by 1/sqrt(din) for "
-        "sane variance. In __call__ just do x @ self.w, adding self.b only when "
-        "use_bias is True. Set self.b = None when use_bias is False so the "
-        "attribute always exists."
+        "Registration in NNX is just assignment: any nnx.Param you set on self in "
+        "__init__ is found automatically. Get a key by CALLING the stream — "
+        "rngs.params() returns a fresh key and advances it — and note the weight "
+        "shape is (din, dout), because the forward pass is x @ w, not w @ x. "
+        "__call__ needs no reshaping: @ already contracts the last axis of x with "
+        "the first of w, and the bias broadcasts. When use_bias is False, still "
+        "define self.b (as None) so the attribute always exists."
     ),
     "description": r"""
 Implement a **fully-connected layer** as a `flax.nnx.Module`.
@@ -38,13 +39,24 @@ class Linear(nnx.Module):
 ```
 
 Unlike Flax Linen, NNX modules hold their parameters **directly as attributes**,
-so `layer.w` is a real array you can inspect and mutate — much closer to
-PyTorch's feel. The functional purity you need for `jit` and `grad` comes from
-`nnx.split` / `nnx.merge`, which NNX's own `nnx.jit` and `nnx.grad` apply for you.
+so `layer.w` is a live object you can inspect and mutate in place — much closer
+to PyTorch's feel, with no separate `params` dict threaded through every call.
+The functional purity that `jit` and `grad` need comes from `nnx.split` /
+`nnx.merge`, which NNX's own `nnx.jit` and `nnx.grad` apply for you.
+
+`layer.w` is an `nnx.Param`, not a bare array. It forwards `.shape` and the
+arithmetic operators, so `x @ self.w` works unchanged, but to read or write the
+array itself use **`layer.w[...]`** — `layer.w[...] = new_weights` assigns,
+`layer.w[...]` reads. (The old `.value` property still exists but is deprecated
+in Flax 0.12.)
 
 Note the shape convention: JAX and Flax use `(din, dout)` and compute `x @ W`,
 whereas PyTorch stores `(dout, din)` and computes `x @ W.T`. Mixing them up is
-the most common bug when porting weights between the two.
+the most common bug when porting weights between the two — and because a
+transposed square matrix has the right shape, it fails silently on square layers.
+
+The `1/sqrt(din)` scale is LeCun-style init: it keeps `Var(y) ≈ Var(x)` through
+the layer, so activations neither explode nor vanish as you stack them.
 """,
     "stub": '''import jax
 import jax.numpy as jnp

@@ -39,18 +39,39 @@ a ReLU. The router is a single `(d_model, num_experts)` matrix.
 5. Output is the weighted sum of those $k$ experts' outputs
 
 ### The auxiliary loss
-$$\mathcal{L}_{\text{aux}} = E \sum_{e=1}^{E} f_e \cdot P_e$$
+$$\mathcal{L}_{\text{aux}} = E \sum_{e=1}^{E} f_e \cdot P_e,
+\qquad
+f_e = \frac{1}{N}\sum_{n=1}^{N} \mathbb{1}\!\left[e \in \mathrm{top}\text{-}k(n)\right],
+\qquad
+P_e = \frac{1}{N}\sum_{n=1}^{N} \mathrm{softmax}(\text{logits}_n)_e$$
 
-where $f_e$ is the **fraction of tokens** routed to expert $e$ (hard, from
-top-$k$) and $P_e$ is the **mean router probability** for expert $e$ (soft, from
-the full softmax). Perfectly uniform routing gives
-$\mathcal{L}_{\text{aux}} = E \cdot E \cdot \frac{1}{E}\cdot\frac{1}{E} = 1$.
+$f_e$ is the **fraction of tokens** routed to expert $e$ (hard, from top-$k$)
+and $P_e$ is the **mean router probability** for expert $e$ (soft, from the full
+softmax over all $E$).
+
+Watch the normalisation, because it is a classic follow-up. Each token is
+counted once per selected expert, so $\sum_e f_e = k$ while $\sum_e P_e = 1$.
+That gives, for this (Switch/Mixtral) convention:
+
+| routing | $\mathcal{L}_{\text{aux}}$ |
+|---|---|
+| perfectly uniform ($f_e = k/E$, $P_e = 1/E$) | $E \cdot E \cdot \tfrac{k}{E}\cdot\tfrac{1}{E} = k$ |
+| total collapse (one expert takes everything) | $E$ |
+
+The famous "uniform gives exactly 1" is the $k = 1$ Switch Transformer case.
+DeepSeek-style implementations divide $f_e$ by $k$ so the uniform value is 1 for
+any $k$; this task uses the un-divided form, which is what
+`transformers`' Mixtral loss computes.
 
 ### Rules
 - Renormalise over the selected experts only — this is the step people miss
 - Return `(output, aux_loss)`; output shape matches the input
 - The aux loss must be differentiable **through $P_e$** (the hard counts $f_e$
   are not differentiable, and that is fine — the gradient flows via $P$)
+- Store the parameters under these names, since the tests read and overwrite
+  them: `self.w_router` `(d_model, num_experts)`, and the experts **stacked on a
+  leading expert axis** as `self.w1` `(num_experts, d_model, d_hidden)` and
+  `self.w2` `(num_experts, d_hidden, d_model)`. Also keep `self.top_k`.
 
 ### Why the aux loss is not optional
 Routing is a positive feedback loop: an expert that is slightly better early
@@ -86,6 +107,9 @@ class MoELayer(nnx.Module):
 
     def __init__(self, d_model: int, d_hidden: int, num_experts: int,
                  top_k: int = 2, *, rngs: nnx.Rngs):
+        # Expected attributes: self.top_k, self.w_router (d_model, num_experts),
+        # self.w1 (num_experts, d_model, d_hidden), self.w2 (num_experts,
+        # d_hidden, d_model).
         pass  # Replace this
 
     def __call__(self, x):
@@ -160,7 +184,8 @@ x = jax.random.normal(jax.random.key(1), (2, 16, 32))
 
 out, aux = layer(x)
 print("out:", out.shape, " aux_loss:", float(aux))
-print("(uniform routing would give aux_loss = 1.0)")
+print(f"(perfectly uniform routing -> top_k = {layer.top_k}; "
+      f"total collapse -> num_experts = {layer.num_experts})")
 
 # How many parameters are there vs how many run per token?
 p = nnx.state(layer, nnx.Param)
@@ -288,30 +313,29 @@ assert not jnp.allclose(out_before, out_used, atol=1e-3), (
 """,
         },
         {
-            "name": "Aux loss is 1.0 under uniform routing",
+            "name": "Aux loss hits its floor of top_k when the router is uniform",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-E = 4
-layer = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=2, rngs=nnx.Rngs(0))
+# A zero router makes every logit 0, so P_e = 1/E exactly. The hard counts then
+# drop out of the sum: aux = E * sum_e f_e * (1/E) = sum_e f_e = k, because each
+# token is counted once for each of its k selected experts. Same answer for any
+# top_k, which pins BOTH the E multiplier and the sum_e f_e = k normalisation.
+for E, k in ((4, 1), (4, 2), (8, 4)):
+    layer = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=k, rngs=nnx.Rngs(0))
+    layer.w_router[...] = jnp.zeros_like(layer.w_router[...])
+    x = jax.random.normal(jax.random.key(5), (4, 32, 8))
+    _, aux = layer(x)
 
-# A zero router gives uniform logits -> uniform probabilities. top_k then splits
-# evenly enough over many tokens that f_e -> k/E and P_e = 1/E, so
-# aux = E * sum_e (k/E)(1/E) = k/E * ... normalised to 1 for a balanced layer.
-layer.w_router[...] = jnp.zeros_like(layer.w_router[...])
-x = jax.random.normal(jax.random.key(5), (4, 32, 8))
-_, aux = layer(x)
-
-# With uniform probs, P_e = 1/E exactly and sum_e f_e = k, so aux = E*k*(1/E)/... = k/1
-# Concretely: aux = E * sum_e f_e * (1/E) = sum_e f_e = top_k.
-expected = float(layer.top_k) if hasattr(layer, 'top_k') else 2.0
-assert jnp.allclose(aux, expected, atol=1e-4), (
-    f'With a zero router every P_e = 1/E and sum_e f_e = top_k, so '
-    f'aux = E * sum_e f_e/E = top_k = {expected}. Got {float(aux)}.'
-)
-assert aux > 0, 'Aux loss must be positive'
+    assert jnp.allclose(aux, float(k), atol=1e-4), (
+        f'E={E}, top_k={k}: with a uniform router P_e = 1/E and sum_e f_e = k, so '
+        f'aux = E * sum_e f_e * (1/E) = k = {k}. Got {float(aux)}. If you got '
+        f'{k / E:.3f} you dropped the leading E; if you got 1.0 you normalised '
+        'f_e by k, which is a different (DeepSeek-style) convention.'
+    )
+    assert aux > 0, 'Aux loss must be positive'
 """,
         },
         {
@@ -322,25 +346,30 @@ import jax.numpy as jnp
 from flax import nnx
 
 E = 8
-x = jax.random.normal(jax.random.key(6), (4, 32, 8))
+# All-positive features, so a single positive router column really does win for
+# every token and the collapse below is total rather than approximate.
+x = jnp.abs(jax.random.normal(jax.random.key(6), (4, 32, 8))) + 0.1
 
 balanced = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=1, rngs=nnx.Rngs(0))
 balanced.w_router[...] = jnp.zeros_like(balanced.w_router[...])
 _, aux_bal = balanced(x)
 
-# Collapsed router: expert 0 wins for every token.
+# Collapsed router: expert 0 outscores every other expert for every token, and
+# takes essentially all of the softmax mass too.
 collapsed = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=1, rngs=nnx.Rngs(0))
 w = jnp.zeros_like(collapsed.w_router[...])
 collapsed.w_router[...] = w.at[:, 0].set(50.0)
 _, aux_col = collapsed(x)
 
 assert aux_col > aux_bal, (
-    f'Routing every token to one expert must cost MORE than balanced routing: '
-    f'collapsed {float(aux_col):.3f} vs balanced {float(aux_bal):.3f}. '
+    f'Routing every token to one expert must cost MORE than uniform routing: '
+    f'collapsed {float(aux_col):.3f} vs uniform {float(aux_bal):.3f}. '
     'That penalty is the only thing preventing router collapse.'
 )
-assert aux_col > 2.0, (
-    f'Full collapse should approach E * 1 * 1 = {E}, got {float(aux_col):.3f}'
+assert aux_col > 0.9 * E, (
+    f'Total collapse means f_0 = 1 and P_0 = 1, so aux -> E * 1 * 1 = {E}. '
+    f'Got {float(aux_col):.3f} — either the E multiplier is missing or f_e is '
+    'not the fraction of tokens routed to expert e.'
 )
 """,
         },

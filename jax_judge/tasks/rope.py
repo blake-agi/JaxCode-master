@@ -7,13 +7,15 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "apply_rope",
     "hint": (
-        "Build the table once: inv_freq = 1.0 / (base ** (jnp.arange(D // 2) * 2.0 / D)) "
-        "gives D/2 frequencies, and theta = jnp.arange(T)[:, None] * inv_freq[None, :] "
-        "gives a (T, D/2) angle grid. The shape trick is the pairing: reshape the head "
-        "dim to (..., D // 2, 2) so x[..., 0] and x[..., 1] are the even and odd halves "
-        "of each pair, rotate them with cos/sin of shape (T, D/2) — which broadcasts "
-        "against any number of leading axes — then jnp.stack([...], axis=-1) and reshape "
-        "back to (..., D). Apply the identical table to q and k."
+        "There are only D/2 distinct angles per position, so the cos/sin table is "
+        "(T, D/2), not (T, D) — build it once and reuse it for both q and k. The "
+        "shape puzzle is getting channel 2j next to channel 2j+1: a reshape that "
+        "splits the last axis into (D//2, 2) does exactly that, and the inverse "
+        "reshape puts them back. Note that a (T, D/2) table broadcasts against "
+        "(..., T, D/2) for any number of leading axes, so nothing about the batch "
+        "or head axes needs special handling. Sanity checks while you debug: "
+        "position 0 must come out unchanged, and every output vector must have "
+        "the same norm as its input."
     ),
     "description": r"""
 Implement **RoPE**: rotate every adjacent pair of head channels by an angle

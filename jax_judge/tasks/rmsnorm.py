@@ -7,10 +7,11 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "RMSNorm",
     "hint": (
-        "rms = sqrt(mean(x**2, axis=-1, keepdims=True) + eps), then "
-        "x / rms * scale. Note there is no mean subtraction and no bias term — "
-        "that is the entire difference from LayerNorm. Compute the mean of the "
-        "SQUARES, not the square of the mean."
+        "Take your LayerNorm and delete two things: the mean subtraction and the "
+        "bias. What is left is one reduction — the mean of the SQUARES along the "
+        "last axis (keepdims=True), not the square of the mean — then divide x by "
+        "the square root of it and multiply by scale. eps goes under the same "
+        "square root, so an all-zero row does not divide by zero."
     ),
     "description": r"""
 Implement **RMSNorm** as an `nnx.Module`.
@@ -25,16 +26,29 @@ $$y = \frac{x}{\sqrt{\frac{1}{d}\sum_i x_i^2 + \epsilon}} \cdot \gamma$$
 - Normalise over the last axis
 
 ### Why drop the mean
-RMSNorm is LayerNorm with the re-centering removed. The 2019 paper's finding was
-that the *re-scaling* is what stabilises training; the *re-centering* contributes
-almost nothing. Dropping it saves a pass over the data and a subtraction, which
-at Llama scale is a real win.
+RMSNorm is LayerNorm with the re-centering removed. The finding of the 2019
+paper (Zhang & Sennrich) was that the *re-scaling* is what stabilises training;
+the *re-centering* contributes almost nothing to it. Dropping it removes one
+reduction, one broadcast subtraction, and one parameter tensor from a layer that
+runs twice per block — small individually, but it sits on the critical path of
+every token in every layer.
 
 Llama, Mistral, Gemma, and T5 all use RMSNorm. GPT-2 and BERT use LayerNorm.
 
-The follow-up worth being ready for: **when do the two coincide?** Exactly when
-the input already has zero mean — then $\text{RMS}(x) = \sigma(x)$ and the two
-are identical up to the missing bias.
+**When do the two coincide?** Exactly when the input already has zero mean —
+then $\text{RMS}(x) = \sigma(x)$ and the two agree, up to the bias RMSNorm does
+not have. This is the follow-up worth being ready for, and the tests below check
+it directly.
+
+### The half of it that is not in the formula
+In low-precision training, real implementations upcast to float32 for the
+reduction. bf16 carries only 8 mantissa bits, so summing $x_i^2$ over
+`d = 4096` loses the small terms to rounding once the running total is a few
+orders of magnitude above them; fp16 has the mantissa but not the range, and
+$\sum x_i^2$ overflows outright. Llama's reference RMSNorm therefore computes the
+mean-of-squares in float32 and casts back only at the end. Nothing here forces
+you to — these tests run in float32 throughout — but "what dtype does your norm
+reduce in?" is a completely fair follow-up.
 """,
     "stub": '''import jax
 import jax.numpy as jnp

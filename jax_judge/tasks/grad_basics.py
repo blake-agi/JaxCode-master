@@ -7,9 +7,12 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "sgd_step",
     "hint": (
-        "jax.value_and_grad(loss_fn) returns a function giving (loss, grads). "
-        "grads has exactly the same pytree structure as params, so you can pair "
-        "them up with jax.tree.map(lambda p, g: p - lr * g, params, grads)."
+        "Two things to look up. First: one transform in the jax.grad family hands "
+        "back the value alongside the gradient, so you never pay for a second "
+        "forward pass. Second: the gradient it returns has exactly the same tree "
+        "structure as params, which means the update is a single traversal that "
+        "visits params and grads in lockstep — reach for the jax.tree helper that "
+        "accepts more than one tree, not a Python loop over dict keys."
     ),
     "description": r"""
 Implement a single **stochastic gradient descent step**.
@@ -23,12 +26,26 @@ return the updated parameters and the loss *at the old parameters*.
 $$\theta_{t+1} = \theta_t - \eta \nabla_\theta \mathcal{L}(\theta_t, \text{batch})$$
 
 ### Rules
-- Use `jax.value_and_grad` — compute the loss and gradient in **one** pass,
-  not two (`loss_fn(...)` followed by `jax.grad(loss_fn)(...)` does double work)
+- Use `jax.value_and_grad` — one forward and one backward pass give you both
+  numbers (`loss_fn(...)` followed by `jax.grad(loss_fn)(...)` runs the forward
+  computation twice)
 - `params` is an arbitrary **pytree** (nested dicts/lists/tuples of arrays),
   not a flat array — do not assume it is a single array
 - Differentiate with respect to `params` only, not the batch
 - The returned loss must be the loss **before** the update
+
+### The traps
+- **Reporting the loss after the update.** Re-evaluating `loss_fn(new_params, …)`
+  costs an extra forward pass *and* reports a number that no training curve
+  in the literature plots. `value_and_grad` gives you the value at the point
+  where the gradient was taken, which is what you want.
+- **Assuming a flat array.** `params - lr * grads` is fine for the toy case and
+  dies with `TypeError: unsupported operand type(s) for -: 'dict' and 'float'`
+  the moment `params` is a real parameter tree.
+- **Reaching for in-place updates.** JAX arrays are immutable; there is no
+  `p -= lr * g`. The step *returns* new parameters, which is why JAX training
+  loops thread state through explicitly instead of hiding it inside a mutable
+  optimizer object.
 
 ### Signature
 ```python
@@ -39,10 +56,12 @@ def sgd_step(loss_fn, params, batch, lr):
 ```
 
 ### Why it matters
-Interviewers use this to check three things at once: that you reach for
-`value_and_grad` instead of calling grad separately, that you know gradients
-mirror the parameter pytree, and that you keep the step function pure so it
-can be wrapped in `jax.jit`.
+Production code uses Optax, and `optax.apply_updates` is exactly the `jax.tree`
+traversal you are writing here (it adds already-negated updates leaf by leaf).
+Interviewers ask for the hand-rolled version to check you understand the
+contract underneath it: gradients mirror the parameter tree leaf for leaf, and
+the step is a pure function of `(params, batch)` — nothing is mutated — so the
+whole thing can be wrapped in `jax.jit` once and reused unchanged.
 """,
     "stub": '''def sgd_step(loss_fn, params, batch, lr):
     """One SGD step.

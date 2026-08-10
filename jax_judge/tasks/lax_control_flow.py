@@ -10,8 +10,9 @@ TASK = {
         "jax.lax.while_loop(cond_fun, body_fun, init_val) needs both functions to "
         "take and return the SAME carry structure, and cond_fun must return a "
         "scalar boolean array. Carry a tuple (guess, iteration) so you can stop on "
-        "either convergence or the iteration cap. Handle x == 0 up front — "
-        "the update divides by the guess."
+        "either convergence or the iteration cap. Think about x == 0 separately: "
+        "the update divides by the guess, and the convergence test on "
+        "|guess**2 - x| never drives the guess all the way to zero."
     ),
     "description": r"""
 Implement $\sqrt{x}$ with **Newton's method**, using `jax.lax.while_loop` so it
@@ -25,8 +26,17 @@ Iterate until $|g_{n+1}^2 - x| < \text{tol}$ or `max_iters` is reached.
 - Use `jax.lax.while_loop` — a Python `while` on a traced value raises
   `ConcretizationTypeError` under `jit`
 - `x` is a **scalar**; the function must be `jit`-able and `vmap`-able
-- Return `0.0` for `x == 0` (the update would divide by zero)
+- Return exactly `0.0` for `x == 0`
 - Do not call `jnp.sqrt`, `x ** 0.5`, or `jnp.power`
+
+### The `x == 0` trap
+Two things go wrong there, and they need different fixes:
+
+1. The update divides by the guess, so seeding the loop at $g_0 = x$ makes the
+   first step $0/0$, i.e. `NaN`. Seed somewhere strictly positive instead.
+2. Even with a safe seed the loop only runs until $|g^2 - x| < \text{tol}$, so
+   for $x = 0$ it stops at $g \approx \sqrt{\text{tol}} \approx 10^{-3}$ — small,
+   but not zero. Special-case the result.
 
 ### Signature
 ```python
@@ -38,9 +48,19 @@ def newton_sqrt(x, tol=1e-6, max_iters=50):
 `while_loop` is the escape hatch for **data-dependent** iteration counts — the
 loop runs until a condition on traced values is met, which a Python loop cannot
 express under tracing. The catch, and the thing interviewers probe: `while_loop`
-is **not reverse-mode differentiable**, because the trip count is not known at
-trace time. If you need gradients through an iterative solver, you either use
-`lax.scan` with a fixed count, or `implicit differentiation` on the fixed point.
+is **not reverse-mode differentiable**. Forward mode (`jax.jvp`) works fine, but
+`jax.grad` raises
+
+```
+ValueError: Reverse-mode differentiation does not work for lax.while_loop
+or lax.fori_loop with dynamic start/stop values. Try using lax.scan, ...
+```
+
+because reverse mode has to replay the loop backwards and the trip count is not
+known at trace time. If you need gradients through an iterative solver you use
+`lax.scan` with a fixed count, or *implicit differentiation* of the fixed point
+(`jax.lax.custom_root` / `custom_vjp`), which differentiates the solution
+without differentiating the iteration that found it.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -74,11 +94,13 @@ def newton_sqrt(x, tol=1e-6, max_iters=50):
         guess, i = carry
         return 0.5 * (guess + x / guess), i + 1
 
-    # Start from x itself (any positive seed converges for x > 0).
+    # Seed at max(x, 1.0): strictly positive for every x >= 0, so the division
+    # in the body is safe (seeding at x itself would give 0/0 for x == 0), and
+    # any positive seed converges.
     init = (jnp.maximum(x, 1.0), jnp.array(0))
     guess, _ = jax.lax.while_loop(cond, body, init)
 
-    # x == 0 would divide by zero in the body, so special-case it.
+    # For x == 0 the loop stops at guess ~ sqrt(tol), not at 0 — pin it.
     return jnp.where(x == 0, 0.0, guess)
 ''',
     "demo": '''import jax

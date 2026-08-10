@@ -10,12 +10,16 @@ TASK = {
     # notebook namespace alongside train_bpe.
     "extra_names": ["apply_merges"],
     "hint": (
-        "Represent each word as a list of symbols and keep a {word: count} "
-        "dict. Each round, tally adjacent pairs weighted by the word count, "
-        "take the most frequent (break ties by the pair itself, sorted, so the "
-        "result is deterministic), record it, then rewrite every word by "
-        "scanning left to right and joining that pair. Stop when no pair occurs "
-        "more than once. apply_merges replays the recorded list IN ORDER."
+        "Keep each word as a LIST of symbols, not a string — after the first "
+        "merge a symbol is more than one character, and 'is this pair adjacent' "
+        "is a question about symbols. One helper does the real work: given a "
+        "symbol list and a pair, walk it left to right and emit the joined "
+        "symbol, skipping two positions when you match. Both halves of the task "
+        "call it, which is the point — training is 'find the best pair, apply "
+        "it, recount from scratch', and applying is the same rewrite replayed. "
+        "Recount from scratch every round: merging changes which pairs exist. "
+        "And make the argmax total: max() over a dict is only as deterministic "
+        "as your tie-break."
     ),
     "description": r"""
 Implement **byte-pair encoding** — both halves: learn the merge list from a
@@ -51,13 +55,16 @@ the algorithm; applying them in a different order gives different tokens.
 ### Why subword tokenization exists
 Word-level vocabularies cannot represent anything they did not see in training —
 every new name, typo or compound becomes `<UNK>`, and the information is gone.
-Character-level has no `<UNK>` problem but makes sequences ~5x longer, and
-attention is quadratic in length.
+Character-level has no `<UNK>` problem but multiplies the sequence length by the
+average characters-per-token (roughly 4x on English), and attention is quadratic
+in length.
 
 BPE splits the difference: frequent words stay single tokens, rare ones
-decompose into reusable pieces, and because the base vocabulary is all
-bytes/characters, **nothing is ever unrepresentable**. That is the property that
-matters — an open vocabulary at a fixed model size.
+decompose into reusable pieces, and because every symbol bottoms out in the base
+alphabet, **nothing is ever unrepresentable**. That is the property that
+matters — an open vocabulary at a fixed model size. This exercise uses
+characters as that alphabet; production tokenizers use raw *bytes*, so that even
+an unseen character or a broken UTF-8 fragment still encodes.
 
 ### What it costs
 Tokenization is a frozen, corpus-dependent preprocessing step, and its seams
@@ -126,8 +133,8 @@ def train_bpe(word_counts, num_merges):
             break
 
         # max() alone is not deterministic across dict orderings, so break ties
-        # on the pair itself.
-        best = max(pair_counts, key=lambda p: (pair_counts[p], [-ord(c) for c in p[0] + p[1]]))
+        # on the pair itself: highest count, then lexicographically smallest.
+        best = min(pair_counts, key=lambda p: (-pair_counts[p], p))
         if pair_counts[best] < 2:
             break
 

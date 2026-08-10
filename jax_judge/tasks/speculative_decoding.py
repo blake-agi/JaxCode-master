@@ -7,13 +7,15 @@ TASK = {
     "difficulty": "Hard",
     "function_name": "speculative_step",
     "hint": (
-        "Walk the draft tokens in order. Accept token i with probability "
-        "min(1, p_target[i, tok] / p_draft[i, tok]) — draw one uniform per "
-        "position. On the FIRST rejection, stop and resample that position from "
-        "the normalised residual max(p_target - p_draft, 0). If every draft "
-        "token is accepted you still get a bonus token, sampled from the "
-        "target's distribution at the final position — that is where the speedup "
-        "comes from."
+        "A plain Python loop over the k positions is fine here — this one is "
+        "about the probability, not the vectorisation. Split the key per "
+        "position and then split AGAIN: the accept/reject uniform and the "
+        "resample draw have to be independent, or the token you fall back to is "
+        "correlated with the coin that rejected it. Sample the residual with "
+        "jax.random.categorical on its log rather than hand-rolling a CDF. Two "
+        "invariants worth asserting as you go: the loop returns on the FIRST "
+        "rejection and never looks at later positions, and n_accepted counts "
+        "DRAFT tokens, so the number of ids you emit is always n_accepted + 1."
     ),
     "description": r"""
 Implement one step of **speculative decoding**: a small draft model proposes $k$
@@ -48,7 +50,8 @@ $$u_i < \min\left(1, \frac{p_{\text{target}}(x_i)}{p_{\text{draft}}(x_i)}\right)
 So a step returns between 1 and $k+1$ tokens — never zero.
 
 ### Rules
-- One uniform draw per position; use `jax.random.split`
+- One uniform draw per position, and a *separate* key for the resample —
+  reusing the accept draw correlates the fallback token with the rejection
 - The residual must be renormalised, and clamped at zero *before* normalising
 - Guard the degenerate case where the residual sums to 0
 - Do not use a library implementation

@@ -21,6 +21,9 @@ unrelated lengths.
 $$Q = x_q W_q,\quad K = x_{kv} W_k,\quad V = x_{kv} W_v,\qquad
 \text{out} = \big[\operatorname{softmax}\!\big(\tfrac{Q_hK_h^\top}{\sqrt{d_h}} + M\big)V_h\big]_{h}W_o$$
 
+with $M$ the additive form of the optional mask ($0$ where `mask` is `True`,
+$-\infty$ elsewhere) and $[\cdot]_h$ the concatenation over heads.
+
 ### Signature
 - `MultiHeadCrossAttention(d_model, num_heads, *, d_context=None, rngs: nnx.Rngs)`
 - `d_context` defaults to `d_model`
@@ -49,8 +52,10 @@ $$Q = x_q W_q,\quad K = x_{kv} W_k,\quad V = x_{kv} W_v,\qquad
   place the prompt enters the network — swap the K/V stream and you swap the
   prompt. It is also why `d_context` is a separate number: text encoders are 768
   or 1024 wide, UNet blocks are 320/640/1280.
-- **Perceiver / Flamingo / DETR**: a small learned latent array of size $T_q = 64$
-  queries an enormous input of size $T_{kv} = 50000$. Cost is
+- **Perceiver / Flamingo / DETR**: a small fixed array of learned queries reads
+  an enormous input. Flamingo's Perceiver Resampler uses 64 latent queries;
+  Perceiver ingests all $224^2 \approx 50\,000$ raw ImageNet pixels as keys;
+  DETR decodes with 100 object queries over a convolutional feature map. Cost is
   $O(T_q T_{kv})$, not $O(T_{kv}^2)$ — cross-attention is how you get a
   fixed-cost bottleneck onto arbitrarily large inputs.
 
@@ -77,8 +82,8 @@ from flax import nnx
 class MultiHeadCrossAttention(nnx.Module):
     """Queries from x_q, keys/values from x_kv. (B, T_q, d_model) out."""
 
-    def __init__(self, d_model: int, num_heads: int, *, d_context: int = None,
-                 rngs: nnx.Rngs):
+    def __init__(self, d_model: int, num_heads: int, *,
+                 d_context: int | None = None, rngs: nnx.Rngs):
         pass  # Replace this
 
     def __call__(self, x_q, x_kv, mask=None):
@@ -91,8 +96,8 @@ from flax import nnx
 
 
 class MultiHeadCrossAttention(nnx.Module):
-    def __init__(self, d_model: int, num_heads: int, *, d_context: int = None,
-                 rngs: nnx.Rngs):
+    def __init__(self, d_model: int, num_heads: int, *,
+                 d_context: int | None = None, rngs: nnx.Rngs):
         if d_model % num_heads != 0:
             raise ValueError(f"d_model={d_model} is not divisible by num_heads={num_heads}")
 

@@ -17,7 +17,8 @@ TASK = {
     "description": r"""
 Implement attention the **FlashAttention** way: stream over key/value tiles,
 never materializing the full $T_q \times T_k$ score matrix, and produce output
-that is *numerically identical* to the standard implementation.
+that is *mathematically exact* — the same function as standard attention, not an
+approximation of it.
 
 ### Signature
 ```python
@@ -41,7 +42,8 @@ $\text{acc}/\ell$.
 ### Rules
 - Process keys in tiles of `block_size`; never build the full score matrix
 - Scale by $1/\sqrt{d}$
-- Must be numerically exact against standard attention — not approximate
+- Must agree with standard attention to floating-point tolerance, for **every**
+  `block_size` — an approximation that is merely close is a fail
 - Handle a `T_k` that is not a multiple of `block_size`
 - Do not use `jax.nn.softmax` on the whole matrix
 
@@ -53,8 +55,12 @@ accumulated by $e^{m_{\text{old}} - m_{\text{new}}}$.
 
 Because $e^{s-m_{\text{old}}} \cdot e^{m_{\text{old}}-m_{\text{new}}} =
 e^{s-m_{\text{new}}}$ exactly, the correction is not an approximation — it is an
-algebraic identity. That is why FlashAttention is bit-comparable to the naive
-version rather than an approximation like [[linear_attention]].
+algebraic identity. In exact arithmetic Flash and naive attention compute the
+same number; in float32 they differ only by the rounding of a different
+summation order (expect $\sim10^{-7}$, and the demo shows it). That is a
+completely different kind of "different" from [[linear_attention]], which drops
+the softmax and changes the answer at any precision. Be precise about this in an
+interview: FlashAttention is **exact, not bit-identical**.
 
 ### It is an IO win, not a FLOP win
 FlashAttention does the **same** number of floating-point operations as standard
@@ -62,8 +68,10 @@ attention — slightly more, in fact, because of the rescaling. It is faster
 because attention is **memory-bandwidth bound**: the naive version writes an
 $O(T^2)$ score matrix out to HBM and reads it back for the softmax and again for
 the $V$ multiply. Flash keeps each tile in SRAM and never writes the scores at
-all, cutting HBM traffic from $O(T^2)$ to $O(T^2/M)$ where $M$ is the SRAM tile
-size.
+all, taking HBM traffic from $\Theta(T^2 + Td)$ words down to
+$\Theta(T^2 d^2 / M)$, where $M$ is the SRAM capacity in words (Dao et al.,
+2022, Thm. 2). Since $M \gg d^2$ on real accelerators, that is a large
+constant-factor cut — it is still quadratic in $T$.
 
 The memory consequence is the bigger deal in practice: peak activation memory
 for attention drops from $O(T^2)$ to $O(T)$, which is what made long context
@@ -85,7 +93,7 @@ def flash_attention(q, k, v, block_size=16):
         block_size: number of keys processed per tile
 
     Returns:
-        (T_q, d_v) — numerically identical to standard attention.
+        (T_q, d_v) — the same function as standard attention, for any block_size.
     """
     pass  # Replace this
 ''',
@@ -133,7 +141,8 @@ ref = jax.nn.softmax(q @ k.T / jnp.sqrt(16.0), axis=-1) @ v
 for bs in (4, 7, 16, 64):
     out = flash_attention(q, k, v, block_size=bs)
     print(f"block_size={bs:>3}: max |diff| vs standard = {float(jnp.abs(out - ref).max()):.2e}")
-# Every tiling gives the same answer — the rescaling is exact, not approximate.
+# ~1e-7 for every tiling: that is float32 round-off from a different summation
+# order, not approximation error. The rescaling is an algebraic identity.
 ''',
     "tests": [
         {

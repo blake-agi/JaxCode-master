@@ -7,15 +7,16 @@ TASK = {
     "difficulty": "Hard",
     "function_name": "data_parallel_mean",
     "hint": (
-        "Build the mesh with jax.make_mesh((n_devices,), ('data',), "
-        "axis_types=(jax.sharding.AxisType.Auto,)) — the Auto axis type lets "
-        "shard_map take an ordinary unsharded array and place it for you. Inside "
-        "shard_map, each device sees only its own (B/n, D) shard, so compute the "
-        "LOCAL mean and then combine across devices with "
-        "jax.lax.pmean(local, axis_name='data'). Use in_specs=P('data', None) to "
-        "split rows across devices, and out_specs=P() so the scalar comes back "
-        "replicated. Because every shard has the same number of rows, the mean of "
-        "the local means is the true global mean."
+        "Inside shard_map you are writing SINGLE-DEVICE code. The array your "
+        "inner function receives is only this device's slice — shape (B // n, D), "
+        "not (B, D) — so a plain jnp.mean on it is a local mean and nothing more. "
+        "Anything crossing devices has to be asked for explicitly, by axis name: "
+        "the string you gave make_mesh is the same string the collective takes as "
+        "axis_name. out_specs=P() is a promise that the output is identical on "
+        "every device, and shard_map rejects a value it cannot prove is "
+        "replicated, so the collective is not optional here. The reason a mean of "
+        "local means is the true global mean is that every shard has the same row "
+        "count — see the Auto-axis snippet below for the mesh boilerplate."
     ),
     "description": r"""
 Compute the mean of a `(B, D)` array **across devices**, using JAX's SPMD tools.
@@ -28,7 +29,7 @@ its own shard, then combine with a collective. Return the scalar global mean.
 - Use `jax.shard_map` with `in_specs=P("data", None)` and `out_specs=P()`
 - Combine the per-device results with `jax.lax.pmean`
 - `B` is divisible by the device count
-- The result must equal `x.mean()` exactly (to float tolerance)
+- The result must match `x.mean()` to float tolerance
 
 ### Explicit vs Auto axis types
 Recent JAX versions give mesh axes a *type*. `jax.make_mesh(...)` defaults to
@@ -40,15 +41,18 @@ ValueError: in_specs passed to shard_map: P('data', None) does not match
 the specs of the input: P(None, None)
 ```
 
-Two ways out — either place the array yourself first with
-`jax.device_put(x, NamedSharding(mesh, P("data", None)))`, or declare the axis
-**Auto** and let `shard_map` handle placement:
+Ways out: place the array yourself first with
+`jax.device_put(x, NamedSharding(mesh, P("data", None)))`; use `jax.reshard(x,
+P("data", None))` inside a `with jax.sharding.set_mesh(mesh):` block, which is
+what the error message itself suggests; or declare the axis **Auto** and let
+`shard_map` do the placement:
 
 ```python
 mesh = jax.make_mesh((n,), ("data",), axis_types=(jax.sharding.AxisType.Auto,))
 ```
 
-This task uses the `Auto` route.
+This task uses the `Auto` route, because it keeps `data_parallel_mean(x)` a
+plain function of a plain array.
 
 ### Signature
 ```python
@@ -181,7 +185,10 @@ assert jnp.ndim(out) == 0, (
 )
 assert jnp.isfinite(out), 'Non-finite result'
 
-# Without the collective you would get only the FIRST shard's mean.
+# Omitting the collective entirely does not silently return one shard's value —
+# shard_map refuses an out_specs=P() output it cannot prove is replicated. What
+# this guards is the other version of the same mistake: reducing over a single
+# shard's rows outside the mesh and calling that the answer.
 first_shard_mean = x[: x.shape[0] // n].mean()
 if n > 1 and not jnp.allclose(first_shard_mean, x.mean(), atol=1e-4):
     assert not jnp.allclose(out, first_shard_mean, atol=1e-6), (

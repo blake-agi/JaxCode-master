@@ -7,12 +7,16 @@ TASK = {
     "difficulty": "Hard",
     "function_name": "grpo_loss",
     "hint": (
-        "Two stages. First the advantages: rewards are (n_prompts, group_size), "
-        "so normalise WITHIN each group — subtract the row mean and divide by "
-        "the row std (+eps), keepdims=True on both. Then broadcast each "
-        "sequence-level advantage across its tokens and run the usual PPO "
-        "clipped surrogate, adding beta * the k3 KL estimator. Everything is "
-        "masked-averaged over real tokens."
+        "Two stages, and the only real work is keeping the axes straight. "
+        "Rewards are (n_prompts, group_size) and the log-probs are "
+        "(n_prompts, group_size, seq), so the advantage is computed on a 2-D "
+        "array and then has to gain a trailing axis to broadcast over tokens — "
+        "keepdims=True on the mean and std is what stops the reduction from "
+        "silently normalising across prompts instead of within a group. Stage "
+        "two is the PPO surrogate you already know plus a KL term; get the sign "
+        "of the log-ratio inside the k3 estimator right by checking the one "
+        "case you can do in your head, new == ref, which must give exactly 0. "
+        "And decide what your std guard does when a whole group ties."
     ),
     "description": r"""
 Implement the **GRPO** loss — the objective behind DeepSeek-R1-style reasoning
@@ -61,10 +65,19 @@ half-finished chain of thought is a terrible regression target.
 
 GRPO's move is to sample $G$ completions for the **same** prompt and use the
 group's own mean reward as the baseline. Same prompt means the comparison is
-apples-to-apples, so the mean is an unbiased baseline — and it costs no
-parameters. Dividing by the group std additionally whitens the advantage scale,
-which is what lets a single learning rate work across prompts of wildly
-different difficulty.
+apples-to-apples, the variance reduction is large, and it costs no parameters.
+Be precise about the "unbiased" claim in an interview, though: a baseline is
+unbiased when it is *independent of the sampled action*, and the group mean
+includes completion $i$ itself, so it introduces an $O(1/G)$ bias that a
+leave-one-out mean would not.
+
+Dividing by the group std whitens the advantage scale, which is what lets one
+learning rate work across prompts of wildly different difficulty — but it is
+also the most-questioned line in the method. It up-weights groups that happen to
+have low reward variance, i.e. the prompts that are nearly always right or
+nearly always wrong, which is precisely the wrong place to put gradient. Several
+2025 variants drop the division and keep only the mean-centering. Implement it
+as specified here, and know why someone might not.
 
 ### The degenerate case to watch
 If every completion in a group gets the **same** reward — all correct, or all

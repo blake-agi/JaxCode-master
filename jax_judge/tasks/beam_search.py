@@ -7,16 +7,16 @@ TASK = {
     "difficulty": "Hard",
     "function_name": "beam_search",
     "hint": (
-        "Keep two Python lists: `live` hypotheses (tokens, raw cumulative log-prob) "
-        "and `finished` ones. Each step, stack the live beams' next-token log-probs "
-        "into an (n_live, V) array and add each beam's running score as a column "
-        "vector — that broadcast IS the expansion. Every entry in the eos column "
-        "terminates its hypothesis, so append those to `finished` first, then mask "
-        "that column with -jnp.inf and take jax.lax.top_k over the flattened "
-        "matrix; divmod(flat_index, V) recovers (beam, token). Prune with the RAW "
-        "sums (all live beams have the same length, so normalising cannot reorder "
-        "them) and only apply score / L**length_penalty when you pick the winner "
-        "out of `finished`."
+        "Carry two Python lists — live hypotheses and finished ones — and let the "
+        "array work be one (n_live, V) matrix per step: each beam's running score "
+        "added to its next-token log-probs. Adding a column vector to that matrix "
+        "IS the expansion, and top_k over the flattened matrix is the prune; "
+        "divmod recovers which beam and which token a flat index came from. Two "
+        "things trip people up. First, the eos column is not a candidate to keep "
+        "alive — harvest it, then take it out of the running before the top_k. "
+        "Second, decide deliberately where length normalisation belongs: inside "
+        "the loop every live beam has the same length, so it cannot change any "
+        "ranking there."
     ),
     "description": r"""
 Implement **beam search** over a black-box scoring function, ranked by
@@ -52,8 +52,8 @@ with $\alpha =$ `length_penalty`. $\alpha = 0$ recovers the raw sum;
 $\alpha = 1$ is the mean log-probability per token.
 
 ### Rules
-- No `jax.lax.top_k` over a Python sort of `n_live * V` tuples — build the
-  `(n_live, V)` score matrix and take `jax.lax.top_k` on its flattened view
+- No Python sort over `n_live * V` candidate tuples — build the `(n_live, V)`
+  score matrix and take `jax.lax.top_k` on its flattened view
 - Prune on **raw** sums, rank the final answer on **normalised** scores
 - `beam_width = 1` must reduce to greedy decoding
 - Return a plain Python `list[int]` beginning with `start_token`

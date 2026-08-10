@@ -7,12 +7,14 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "dpo_loss",
     "hint": (
-        "Form the two log-ratios pi_chosen - ref_chosen and pi_rejected - "
-        "ref_rejected, subtract them to get the margin, scale by beta, then the "
-        "loss is -log_sigmoid(beta * margin) averaged over the batch. Write "
-        "log-sigmoid as -softplus(-x) (or use jax.nn.log_sigmoid) — never "
-        "jnp.log(jax.nn.sigmoid(x)), which underflows to -inf for margins "
-        "below about -90."
+        "The whole loss is four lines and the shape never changes: (batch,) in, "
+        "scalar out. Notice the quantity inside the sigmoid is a difference of "
+        "differences — write it that way and the sign convention checks itself "
+        "(a better chosen completion must push the argument UP). The one thing "
+        "you must not write is jnp.log(jax.nn.sigmoid(x)): in float32 "
+        "jax.nn.sigmoid flushes to 0 around x = -88, so the loss becomes inf on "
+        "exactly the examples the model is getting most wrong. Reach for "
+        "jax.nn.log_sigmoid, which is the -softplus(-x) form."
     ),
     "description": r"""
 Implement the **DPO** loss.
@@ -44,10 +46,15 @@ Without $\pi_{\text{ref}}$ the objective would happily drive
 $\log\pi_\theta(y_w)$ to zero and $\log\pi_\theta(y_l)$ to $-\infty$ — perfect
 preference accuracy, destroyed model. Subtracting the reference log-probs turns
 the quantity being ranked into a *log-ratio*, and that ratio is exactly the
-implicit reward $r(x,y) = \beta\log\frac{\pi_\theta}{\pi_{\text{ref}}}$ of a
-KL-constrained RLHF problem. So the KL penalty is not an extra term bolted on —
-it is baked into the parameterisation. $\beta$ is the KL strength: large $\beta$
-keeps you near the reference, small $\beta$ lets you drift.
+implicit reward of a KL-constrained RLHF problem,
+
+$$r(x,y) = \beta\log\frac{\pi_\theta(y|x)}{\pi_{\text{ref}}(y|x)} + \beta\log Z(x)$$
+
+where the intractable $\log Z(x)$ depends only on the prompt — so it cancels the
+moment you subtract two completions of the *same* prompt, which is why the loss
+never has to compute it. The KL penalty is therefore not an extra term bolted
+on; it is baked into the parameterisation. $\beta$ is the KL strength: large
+$\beta$ keeps you near the reference, small $\beta$ lets you drift.
 
 ### Why this replaced PPO-style RLHF
 Classic RLHF needs a separately-trained reward model plus an online RL loop with

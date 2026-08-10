@@ -33,6 +33,8 @@ class LoRALinear(nnx.Module):
 ```
 
 ### Rules
+- Name the three tensors `self.W` `(din, dout)`, `self.A` `(din, rank)` and
+  `self.B` `(rank, dout)` — the tests read and overwrite them by name
 - The base weight must **not** be an `nnx.Param` — use a plain `nnx.Variable`,
   so `nnx.split(model, nnx.Param, ...)` sees only the adapter
 - `A`: random init (scaled normal is fine). `B`: **zeros**
@@ -83,6 +85,8 @@ class LoRALinear(nnx.Module):
 
     def __init__(self, din: int, dout: int, rank: int, alpha: float = 1.0,
                  *, rngs: nnx.Rngs):
+        # Expected attributes: self.W (din, dout) frozen, self.A (din, rank) and
+        # self.B (rank, dout) trainable.
         pass  # Replace this
 
     def __call__(self, x):

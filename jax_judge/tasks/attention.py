@@ -27,7 +27,7 @@ $$\text{Attention}(Q, K, V) = \operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt
 | `q` | `(B, T_q, d_k)` | queries |
 | `k` | `(B, T_k, d_k)` | keys — same feature dim as `q` |
 | `v` | `(B, T_k, d_v)` | values — `d_v` may differ from `d_k` |
-| `mask` | broadcastable to `(B, T_q, T_k)` | boolean, `True` = **attend**, `False` = **block** |
+| `mask` | broadcastable to `(..., T_q, T_k)` | boolean, `True` = **attend**, `False` = **block** |
 | returns | `(B, T_q, d_v)` | |
 
 ### Rules
@@ -45,17 +45,20 @@ sum of $d_k$ independent unit-variance terms, so
 
 $$\operatorname{Var}(q \cdot k) = d_k, \qquad \operatorname{std}(q \cdot k) = \sqrt{d_k}$$
 
-At $d_k = 64$ the raw logits have standard deviation $8$, so the gap between the
-largest and a typical logit is routinely $20$+. `softmax` of that is numerically
-one-hot. And the Jacobian of softmax is $\operatorname{diag}(p) - pp^\top$,
-which vanishes as $p$ becomes one-hot — so the layer stops passing gradient
-before training has learned anything. Dividing by $\sqrt{d_k}$ pulls the logit
-variance back to $1$ regardless of head width, which is exactly why you can
-widen heads without retuning the initialisation.
+At $d_k = 64$ the raw logits have standard deviation $8$, so across a few hundred
+keys the gap between the largest logit and a typical one runs to $20$–$30$.
+`softmax` of that is numerically one-hot. And the Jacobian of softmax is
+$\operatorname{diag}(p) - pp^\top$, which vanishes as $p$ becomes one-hot — so
+the layer stops passing gradient before training has learned anything. Dividing
+by $\sqrt{d_k}$ pulls the logit variance back to $1$ regardless of head width,
+which is exactly why you can widen heads without retuning the initialisation.
 
-This is the single most common thing interviewers check, along with whether you
-scale by $\sqrt{d_k}$ (the **key** dim, per head) rather than $\sqrt{d_{model}}$.
-In multi-head attention those differ by a factor of $H$.
+Interviewers probe two things here. First that the scale is present at all.
+Second — the near-miss that actually separates candidates — that it is
+$\sqrt{d_k}$, the **per-head key** dim, and not $\sqrt{d_{model}}$. With $H$
+heads those dims differ by a factor of $H$, so the two scale factors differ by
+$\sqrt{H}$: at $H = 16$ you would be shrinking every logit by an extra $4\times$
+and the attention would come out close to uniform.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -99,17 +102,19 @@ def scaled_dot_product_attention(q, k, v, mask=None):
 import jax.numpy as jnp
 
 # What the scaling actually buys you: logit spread vs head width.
-key = jax.random.key(0)
+# 64 queries over 512 keys, so the sample statistics settle near their limits.
 for d_k in (8, 64, 512):
     kq, kk = jax.random.split(jax.random.key(d_k))
-    q = jax.random.normal(kq, (1, 1, d_k))
-    k = jax.random.normal(kk, (1, 64, d_k))
-    raw = (q @ jnp.swapaxes(k, -1, -2))[0, 0]
+    q = jax.random.normal(kq, (1, 64, d_k))
+    k = jax.random.normal(kk, (1, 512, d_k))
+    raw = (q @ jnp.swapaxes(k, -1, -2))[0]              # (64, 512)
     scaled = raw / jnp.sqrt(float(d_k))
-    p_raw = jax.nn.softmax(raw)
-    p_scaled = jax.nn.softmax(scaled)
-    print(f"d_k={d_k:4d}  logit std raw={raw.std():7.2f} scaled={scaled.std():5.2f}"
-          f"  max prob raw={p_raw.max():.3f} scaled={p_scaled.max():.3f}")
+    p_raw = jax.nn.softmax(raw, axis=-1)
+    p_scaled = jax.nn.softmax(scaled, axis=-1)
+    print(f"d_k={d_k:4d}  sqrt(d_k)={float(d_k) ** 0.5:6.2f}"
+          f"  logit std raw={raw.std():6.2f} scaled={scaled.std():4.2f}"
+          f"  mean max prob raw={p_raw.max(-1).mean():.3f}"
+          f" scaled={p_scaled.max(-1).mean():.3f}")
 
 # Cross shapes: 3 queries attending over 5 keys, values 8-dim.
 q = jax.random.normal(jax.random.key(1), (2, 3, 16))

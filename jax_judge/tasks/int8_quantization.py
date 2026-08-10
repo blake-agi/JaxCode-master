@@ -7,11 +7,15 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "quantize_int8",
     "hint": (
-        "Symmetric: scale = max(|x|) / 127, zero_point = 0, q = round(x / scale). "
-        "Asymmetric: scale = (max - min) / 255, zero_point = round(-min / scale) "
-        "- 128, q = round(x / scale) + zero_point. Clip to [-128, 127] in both "
-        "cases and dequantize as (q - zero_point) * scale. Watch the constant "
-        "-tensor edge case, where the range is 0 and the scale would divide by zero."
+        "Both modes are the same three lines with a different (scale, "
+        "zero_point). Derive the asymmetric zero point rather than memorising "
+        "it: you want min(x) to land on -128 and max(x) on 127, so write down "
+        "round(min/s) + z = -128 and solve. Sanity-check your formula on both "
+        "endpoints before writing any code. Three mechanical traps: clip to "
+        "[-128, 127] yourself instead of trusting the cast to saturate, do the "
+        "dequant subtraction in float (q - zero_point wraps if both stay int8), "
+        "and guard the zero-range tensor with jnp.where rather than a Python "
+        "`if`, so the function still traces under jit."
     ),
     "description": r"""
 Implement per-tensor **int8 quantization**, both symmetric and asymmetric.
@@ -37,9 +41,12 @@ def quantize_int8(x, symmetric=True):
 
 ### Rules
 - Per-**tensor** (one scale for the whole array), not per-channel
-- Clip into `[-128, 127]` before casting
+- Clip into `[-128, 127]` before casting. JAX's float→int8 cast happens to
+  saturate, but NumPy's and PyTorch's wrap (`200.0` becomes `-56`) — the
+  explicit clip is what makes the arithmetic portable
 - Handle a constant tensor (zero range) without producing `NaN`/`Inf`
-- `round` must be round-half-to-even (`jnp.round`), matching hardware
+- Round with `jnp.round` — round-half-to-even, the IEEE-754 default, matching
+  `np.round` and `torch.round` so a cross-framework diff stays bit-identical
 
 ### Symmetric vs asymmetric
 Symmetric is cheaper: with $z=0$, a quantized matmul is just an integer matmul
@@ -57,9 +64,13 @@ into a couple of quantization levels — accuracy falls off a cliff, and it gets
 *worse* as models get bigger.
 
 That single observation is what the whole modern literature is built around:
-LLM.int8() splits the outlier channels out into fp16, SmoothQuant migrates the
-scale difficulty from activations into weights, AWQ keeps the salient channels
-at higher precision. The tests below reproduce the failure directly so you can
+LLM.int8() splits the outlier channels out into fp16 — correct, but a
+mixed-precision matmul costs throughput. SmoothQuant keeps one dtype and instead
+migrates the difficulty from activations into weights with a per-channel
+rescaling, and AWQ searches for per-channel scales that protect the ~1% salient
+weight channels *without* holding anything at higher precision. "Why did the
+later work move away from splitting outliers into fp16?" is the natural
+follow-up question. The tests below reproduce the failure directly so you can
 see the magnitude of it.
 """,
     "stub": '''import jax

@@ -41,15 +41,31 @@ def adam_update(params, grads, state, step, lr=1e-3,
 - Must work under `jax.jit`
 
 ### What bias correction actually fixes
-This is the part people get wrong. $m$ and $v$ start at **zero**, so at $t=1$,
-$m_1 = (1-\beta_1) g_1 = 0.1 g_1$ — a tenth of the true gradient. Without
-correction the first steps are far too small, and because $\beta_2 = 0.999$ the
-second-moment estimate takes *thousands* of steps to warm up.
+$m$ and $v$ both start at **zero**, so both are biased toward zero early on: at
+$t=1$, $m_1 = (1-\beta_1) g_1 = 0.1 g_1$ and $v_1 = (1-\beta_2) g_1^2 =
+0.001 g_1^2$.
+
+The trap is guessing which way the error goes. "Both estimates are too small, so
+the step must be too small" is the intuitive answer and it is **wrong**. The
+step is a *ratio*, and $v$ is far more biased than $m$ — it also sits under a
+square root, which halves its bias in log terms. Uncorrected, with a constant
+gradient:
+
+$$\frac{m_t}{\sqrt{v_t}} = \frac{1-\beta_1^t}{\sqrt{1-\beta_2^t}}
+\quad\Longrightarrow\quad
+3.2\times \text{ at } t=1, \;\; 6.5\times \text{ at } t=10, \;\;
+1.26\times \text{ at } t=1000$$
+
+So an Adam missing bias correction **overshoots by a factor of 3–6 for the first
+few hundred steps**, and does not settle within 10% of the right scale until
+around $t \approx 1750$ at $\beta_2 = 0.999$. That is a diverging-loss bug, not a
+slow-start bug — and it is the same failure mode warmup exists to paper over
+([[cosine_lr]]).
 
 The correction has a sharp observable signature: **with** it, the very first
-update has magnitude $\approx \eta$ regardless of how large or small the
-gradient is (since $\hat{m}_1/\sqrt{\hat{v}_1} = g/|g| = \pm 1$). That property
-is exactly what the tests check, and it is the cleanest way to tell a correct
+update has magnitude exactly $\eta$ regardless of how large or small the
+gradient is (since $\hat{m}_1/\sqrt{\hat{v}_1} = g_1/|g_1| = \pm 1$). That
+property is what the tests check, and it is the cleanest way to tell a correct
 Adam from one missing the correction.
 
 ### Where AdamW differs
@@ -107,7 +123,15 @@ state = {"m": jax.tree.map(jnp.zeros_like, params),
 for g in (jnp.array([1e-4, 1e-4]), jnp.array([1e4, 1e4])):
     p, _ = adam_update(params, {"w": g}, state, step=1, lr=0.1)
     print(f"grad {g[0]:>8.0e} -> step size {abs(float(p['w'][0] - 1.0)):.4f}")
-# ...both give a first step of ~lr. That is bias correction doing its job.
+# ...both give a first step of exactly lr. That is bias correction doing its job.
+
+# And the direction of the bug, which is the part people get backwards:
+# uncorrected Adam OVERSHOOTS, it does not undershoot.
+b1, b2 = 0.9, 0.999
+print("\n  t   uncorrected |step| / lr")
+for t in (1, 10, 100, 1000):
+    ratio = (1 - b1 ** t) / jnp.sqrt(1 - b2 ** t)   # constant-gradient case
+    print(f"{t:>5}   {float(ratio):.2f}x")
 ''',
     "tests": [
         {

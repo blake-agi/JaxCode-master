@@ -7,11 +7,14 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "cosine_schedule",
     "hint": (
-        "Two regimes. Below warmup_steps the factor is step / warmup_steps. "
-        "After it, let progress = (step - warmup) / (total - warmup) clipped to "
-        "[0, 1], then min_lr + 0.5 * (base_lr - min_lr) * (1 + cos(pi * progress)). "
-        "Use jnp.where rather than a Python if, so the whole thing stays "
-        "vectorised and jittable when step is a traced array."
+        "Evaluate BOTH regimes unconditionally and select with jnp.where — a "
+        "Python if cannot see a traced step, and it cannot handle an array of "
+        "steps either. Then worry about the two denominators, because "
+        "jnp.where evaluates both sides: warmup_steps may be 0, and the decay "
+        "span total_steps - warmup_steps may be 0 too. Clamp the decay "
+        "*progress* into [0, 1] rather than clamping the resulting rate — past "
+        "the end cos turns back upward, and a min_lr floor applied afterwards "
+        "only raises values, so it would never catch that."
     ),
     "description": r"""
 Implement the learning-rate schedule that essentially every modern transformer
@@ -40,24 +43,44 @@ def cosine_schedule(step, base_lr, warmup_steps, total_steps, min_lr=0.0):
 - Do not use `optax.warmup_cosine_decay_schedule`
 
 ### Boundary conventions this is graded on
-- $\eta(0) = 0$
+- $\eta(0) = 0$ when $T_w > 0$ (and $\eta_{\max}$ when $T_w = 0$ — the ramp is empty)
 - $\eta(T_w) = \eta_{\max}$ exactly — warmup ends *at* the peak
 - $\eta(T) = \eta_{\min}$ exactly
 - the halfway point of decay is $(\eta_{\max}+\eta_{\min})/2$
 
-### Why warmup exists
-At step 0 Adam's second-moment estimate $v$ is pure noise — it has seen exactly
-one gradient — so $\hat{m}/\sqrt{\hat{v}}$ is an unreliable direction with
-magnitude pinned near 1. Taking full-size steps in a badly-estimated direction
-is how early training diverges, and the deeper the network the worse it is.
-Warmup buys the moment estimates time to become meaningful. This is also why
-[[adam]]'s bias correction and warmup are usually discussed together, and why
-architectures that stabilise early gradients (pre-norm) need much less warmup.
+The two branches are chosen so that they **agree at the seam**: warmup's
+$\eta_{\max} t / T_w$ hits $\eta_{\max}$ at $t = T_w$, and the cosine at
+progress 0 is also $\eta_{\max}$, so it does not matter whether the comparison
+is `<` or `<=` and the schedule is continuous either way. The off-by-one that
+*does* bite is the warmup numerator: writing `(step + 1) / T_w` (or dividing by
+`T_w - 1`) gives $\eta(0) \neq 0$ or overshoots the peak.
 
-Cosine decay then matters at the *other* end: it spends a long time at a high
-rate and anneals smoothly to near zero, which empirically beats step decay and,
-unlike a linear ramp to zero, does not waste the final steps at a rate too
-small to make progress.
+### Why warmup exists
+At step 0 Adam's second-moment estimate $v$ has seen exactly one gradient, so
+$\hat{m}/\sqrt{\hat{v}}$ is an unreliable *direction* whose magnitude is pinned
+near 1 — full-size steps along a badly-estimated direction is how early training
+diverges, and the deeper the network the worse it is. Warmup buys the moment
+estimates time to become meaningful. That is also why [[adam]]'s bias correction
+and warmup are usually discussed together (get the correction wrong and the
+early steps are several times *too large*, which warmup then partially hides),
+and why architectures that stabilise early gradients (pre-norm) need much less
+warmup.
+
+### Why cosine rather than linear
+Both start at $\eta_{\max}$ and end at $\eta_{\min}$; the difference is how the
+budget in between is spent. Cosine is **flatter at both ends and steeper in the
+middle**: at 25% through decay it is still at $0.854\,\eta_{\max}$ where a linear
+ramp is already down to $0.75$, and at 75% it is at $0.146$ where linear is still
+at $0.25$. So cosine holds a near-peak rate through the early part of decay —
+where most of the learning happens — and then anneals hard.
+
+Its derivative $-\tfrac{\pi}{2}(\eta_{\max}-\eta_{\min})\sin(\pi p)$ vanishes at
+both $p = 0$ and $p = 1$, so the rate leaves the peak and arrives at the floor
+smoothly, with none of the loss spikes that step decay's discontinuities cause.
+The cost is that the whole shape is pinned to $T$: stop early and you stop
+mid-decay at a high rate, extend $T$ and every previous step was on the wrong
+curve. That non-resumability is the standard interview follow-up, and it is
+exactly what constant-then-decay ("WSD"-style) schedules were introduced to fix.
 """,
     "stub": '''import jax
 import jax.numpy as jnp

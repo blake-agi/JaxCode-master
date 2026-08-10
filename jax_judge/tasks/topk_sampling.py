@@ -7,15 +7,15 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "sample_top_k_top_p",
     "hint": (
-        "Order is everything: divide by temperature FIRST, then top-k, then top-p, "
-        "then draw. For top-k use jax.lax.top_k(logits, k)[0][-1] as the threshold "
-        "and jnp.where(logits < kth, -jnp.inf, logits). For top-p, sort descending "
-        "(jnp.argsort(logits)[::-1]), softmax the sorted logits, and take the "
-        "EXCLUSIVE cumulative sum (jnp.cumsum(p) - p); keep ranks where that is "
-        "strictly less than top_p, which automatically keeps rank 0. Scatter the "
-        "boolean mask back to vocabulary order with "
-        "jnp.zeros(V, bool).at[order].set(keep). Finish with "
-        "jax.random.categorical, which takes logits and handles -inf correctly."
+        "Each stage is one JAX op, and the order in the spec is not negotiable. "
+        "jax.lax.top_k hands you the k-th largest logit to threshold against; "
+        "jnp.argsort plus jnp.cumsum give you the nucleus in sorted-rank space; "
+        "a scatter (jnp.zeros(V, bool).at[...]) puts a rank mask back into "
+        "vocabulary order; jax.random.categorical samples from logits directly, "
+        "so mask with -jnp.inf and never renormalise by hand. The subtle part is "
+        "WHICH running total: it has to exclude the token being tested, or the "
+        "token that crosses the threshold is thrown away instead of kept. And "
+        "check what your rule does when top_p is exactly 0."
     ),
     "description": r"""
 Implement the standard **LLM sampling head**: temperature scaling, top-k
@@ -40,7 +40,9 @@ $\sum_{x \in S} p(x) \ge p$. Concretely, sort descending and keep rank $i$ iff
 $$\sum_{j<i} p_{(j)} \;<\; p$$
 
 The *exclusive* cumulative sum is what makes the token that crosses the
-threshold get kept, and it keeps rank 0 for free even when `top_p` is tiny.
+threshold get kept, and it keeps rank 0 alive for any `top_p` $> 0$.
+`top_p = 0` is the one case it does not cover — force rank 0 in explicitly so
+the filter can never mask the whole vocabulary.
 
 ### Rules
 - Everything not kept is set to `-jnp.inf` **before** the draw — do not
@@ -58,9 +60,10 @@ Temperature commutes with top-k — dividing by $T$ is monotone, so the identity
 of the $k$ largest logits never changes. It does **not** commute with top-p:
 the nucleus is defined on probabilities, and $T$ changes them. With
 $z = [3,2,1,0]$ and $p = 0.9$, $T=1$ admits three tokens but $T=0.5$ admits
-only two. Filtering before scaling silently gives you a wider nucleus than you
-asked for. Ship that bug and your "deterministic, low-temperature" endpoint
-keeps emitting tokens the user thought they had truncated away.
+only two. Filtering before scaling gives you the nucleus of the *unscaled*
+distribution — wider than you asked for whenever $T<1$, narrower whenever
+$T>1$. Ship that bug and your "deterministic, low-temperature" endpoint keeps
+emitting tokens the user thought they had truncated away.
 
 The second trap is renormalising twice. Masking to `-inf` and letting the
 softmax inside `categorical` normalise once is exact; explicitly dividing by

@@ -23,8 +23,13 @@ $$h = x + \mathrm{Attn}(\mathrm{LN}_1(x)), \qquad y = h + \mathrm{MLP}(\mathrm{L
 
 with causal multi-head self-attention
 
-$$\mathrm{Attn}(x) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d_h}} + M\right)V W_O,
+$$\mathrm{Attn}(x) = \mathrm{Concat}_h\!\left[
+\mathrm{softmax}\!\left(\frac{Q_h K_h^\top}{\sqrt{d_h}} + M\right) V_h
+\right] W_O,
 \qquad M_{ij} = \begin{cases} 0 & j \le i \\ -\infty & j > i \end{cases}$$
+
+(the softmax runs per head, over the key axis; the heads are concatenated back
+to width $D$ before the output projection)
 
 and a position-wise MLP $\;d \to 4d \to \mathrm{GELU} \to d$.
 
@@ -45,8 +50,9 @@ The 2017 "Attention Is All You Need" block was **post-norm**:
 
 $$x \leftarrow \mathrm{LN}(x + \mathrm{Attn}(x))$$
 
-GPT-2 moved the norm inside the branch. That one move is why you can stack 96
-layers.
+GPT-2 moved the norm inside the branch, and every large model since has kept it
+there. That one move is most of why 48-layer GPT-2 XL, 96-layer GPT-3 and
+80-layer Llama-3-70B stacks train at all.
 
 Write the network as a chain of blocks and look at the backward path. Pre-norm
 gives $y = x + f(\mathrm{LN}(x))$, so $\partial y/\partial x = I + \partial
@@ -56,8 +62,9 @@ each block's contribution. Post-norm puts a LayerNorm *on* that highway. LN's
 Jacobian rescales by $1/\sigma$ and projects out the mean direction, so the
 signal is multiplied by $L$ such factors on the way down. At depth the product
 drifts — which is exactly why the original Transformer needed learning-rate
-**warmup** and careful init, and why pre-norm nets train from step 0 with a flat
-schedule.
+**warmup** and careful init, and why pre-norm nets *can* be trained without it
+(Xiong et al., 2020). Do not overclaim in an interview: warmup is still standard
+practice for pre-norm models, it just stops being load-bearing.
 
 The price: nothing bounds the residual stream any more. Each block adds an
 $O(1)$ correction, so $\mathrm{Var}(x_\ell)$ grows roughly linearly in depth,

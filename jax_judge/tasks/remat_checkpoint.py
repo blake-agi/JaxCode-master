@@ -7,11 +7,12 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "deep_chain",
     "hint": (
-        "Wrap the per-block function, not the whole chain: "
-        "h = jax.checkpoint(block)(W, h) inside the loop. jax.checkpoint returns a "
-        "new function, so apply it to `block` and then call the result. The numbers "
-        "must come out identical to the unwrapped version — only the memory "
-        "profile changes."
+        "jax.checkpoint is a transform, not a call: it takes a FUNCTION and hands "
+        "back a new function with the same signature, so you apply it to `block` "
+        "and then call the result on the arguments. Granularity is the whole "
+        "decision — one checkpoint around the entire chain buys you nothing, so "
+        "the wrapping belongs inside the loop, once per block. Nothing about the "
+        "numbers changes; only what gets stored between forward and backward."
     ),
     "description": r"""
 Apply a deep stack of blocks with **gradient checkpointing** (rematerialization).
@@ -29,21 +30,40 @@ block wrapped in `jax.checkpoint`.
 - Use `jax.checkpoint` (a.k.a. `jax.remat`)
 
 ### The tradeoff
-Reverse-mode autodiff normally saves every intermediate activation on the
-forward pass so the backward pass can use them. For an `L`-layer network that is
-`O(L)` memory.
+Reverse-mode autodiff normally keeps every intermediate from the forward pass
+alive until the backward pass consumes it. For `L` layers that each stash `k`
+tensors internally, that is $O(kL)$.
 
-`jax.checkpoint` says: *don't save this block's internals — recompute them during
-the backward pass.* Memory drops to `O(1)` per checkpointed block at the cost of
-one extra forward evaluation. Checkpointing every layer takes peak memory from
-`O(L)` to `O(1)` for about 1.3x the compute.
+`jax.checkpoint` says: *don't keep this block's internals — recompute them when
+the backward pass gets here.* Checkpointing every layer stores one tensor per
+layer **boundary** instead of `k` per layer, so $O(kL)$ becomes $O(L)$.
+
+Be precise about that: it is a large constant-factor win, **not** an asymptotic
+one. The boundary activations still grow with depth. The genuinely sublinear
+scheme is Chen et al. (2016), *Training Deep Nets with Sublinear Memory Cost*,
+which checkpoints every $\sqrt{L}$-th layer for $O(\sqrt{L})$ memory.
+
+The price is one extra forward evaluation of each rematerialized region. A
+backward pass already costs roughly 2x a forward pass, so recomputing the
+forward once takes the total from about 3x to about 4x — the familiar "~33%
+more compute" figure.
+
+### The granularity trap
+Wrapping the *whole* chain in one `checkpoint` looks like the aggressive choice
+and saves nothing. Remat drops the intermediates during the forward pass, but
+the backward pass then has to recompute the entire chain in one go — and that
+recomputation materializes all `L` layers' activations anyway. Peak memory is
+unchanged and you paid for the extra forward. The memory you get is decided by
+how finely you cut the chain.
 
 ### Why it matters
 This is exactly how large transformers are trained — one `checkpoint` per
 transformer layer is standard practice, and it is often the difference between
-a model fitting in HBM and not. Expect a follow-up question about where the
-extra compute comes from, and about `policy=` for saving only the expensive ops
-(like matmuls) while rematerializing the cheap elementwise ones.
+a model fitting in HBM and not. Expect a follow-up about where the extra compute
+comes from, and about `policy=` — e.g.
+`jax.checkpoint(f, policy=jax.checkpoint_policies.dots_with_no_batch_dims_saveable)`
+keeps the expensive matmul outputs and rematerializes only the cheap elementwise
+ops, which recovers most of the memory for a fraction of the recompute.
 """,
     "stub": '''import jax
 import jax.numpy as jnp

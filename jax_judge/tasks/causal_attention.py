@@ -64,12 +64,24 @@ distribution over its visible prefix and the gradient w.r.t. future keys is
 exactly zero.
 
 ### Which large negative number
-`-1e9` is the usual choice and is fine in `float32`/`bfloat16`. In `float16` it
-overflows to `-inf` — harmless here, but if you ever add two such biases (causal
-+ padding) you get `-inf + -inf`, and a fully-masked row then produces `nan`
-because `softmax` computes `x - max(x) = -inf - (-inf)`. `jnp.finfo(dtype).min`
-or `jnp.where(mask, scores, -1e9)` (replace rather than add) are the defensive
-forms. Padding-only rows in a batch are the real-world case that hits this.
+`-1e9` is the usual choice and is fine in `float32` and `bfloat16` — bfloat16
+keeps float32's exponent range, so it represents `-1e9` without trouble.
+`float16` does not: it tops out at $65504$, so `-1e9` silently becomes `-inf`
+there.
+
+That is harmless for a *causal* mask on its own, because every row keeps its own
+diagonal and so no row is entirely blocked. It stops being harmless as soon as a
+second mask joins in. Combine causal with padding and a sequence that is pure
+padding leaves a row with no visible key at all; `softmax` then evaluates
+`x - max(x)` as `-inf - (-inf)` = `nan`, which spreads through the whole batch's
+gradients. That row is a real-world case, not a contrived one — it is what a
+short sequence in a long-padded batch looks like.
+
+Two defensive forms: `jnp.finfo(dtype).min`, which is large but finite in every
+dtype, or `jnp.where(mask, scores, -1e9)` — replacing rather than adding, so the
+bias can never accumulate. A fully-masked row then produces a uniform
+(meaningless, but finite) distribution instead of a `nan`, which is far easier
+to debug than a loss that turns to `nan` ten steps later.
 
 ### At decode time
 With a KV cache, $Q$ has length $1$ while $K$ has length $t+1$ — the mask becomes
@@ -278,8 +290,9 @@ v = jax.random.normal(jax.random.key(2), (1, 5, 16))
 out = {fn}(q, k, v)
 assert jnp.isfinite(out).all(), (
     'Non-finite output at large logits. Either you are doing exp/sum by hand '
-    'without subtracting the row max, or a -inf mask hit a row where it is the '
-    'maximum. jax.nn.softmax plus a finite -1e9 bias handles both.'
+    'without subtracting the row max, or your mask left a row with no visible '
+    'key at all, so softmax evaluated -inf - (-inf). jax.nn.softmax plus a '
+    'finite -1e9 bias handles both.'
 )
 lo, hi = jnp.min(v, axis=1), jnp.max(v, axis=1)
 assert jnp.all(out >= lo - 1e-3) and jnp.all(out <= hi + 1e-3), (

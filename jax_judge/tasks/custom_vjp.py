@@ -7,11 +7,15 @@ TASK = {
     "difficulty": "Hard",
     "function_name": "log1pexp",
     "hint": (
-        "Two separate fixes. Forward: jnp.logaddexp(0.0, x) is already stable, "
-        "so use it instead of jnp.log(1 + jnp.exp(x)). Backward: declare "
-        "@jax.custom_vjp, then define fwd(x) -> (out, residual) and "
-        "bwd(residual, g) -> (grad,) as a TUPLE, with the analytic derivative "
-        "sigmoid(x) = jax.nn.sigmoid(x). Wire them up with log1pexp.defvjp(fwd, bwd)."
+        "The three pieces have fixed shapes and none is optional. fwd(x) returns "
+        "(output, residuals) — residuals are whatever the backward rule needs, so "
+        "ask yourself whether that is x or the output here. bwd(residuals, g) "
+        "receives the INCOMING cotangent g and must return a tuple, one entry per "
+        "primal argument, so a single input still needs the trailing comma — and g "
+        "has to be multiplied into your derivative, not dropped (with jax.grad it "
+        "is 1.0, which hides the bug). Note that fwd, not the decorated function, "
+        "is what runs when you differentiate, so fwd needs to be stable too. "
+        "Nothing is registered until you call .defvjp(fwd, bwd)."
     ),
     "description": r"""
 Implement the softplus function
@@ -166,6 +170,18 @@ want = jax.nn.sigmoid(xs)
 
 assert jnp.allclose(got, want, atol=1e-5), f'{got} vs sigmoid {want}'
 assert abs(float(jax.grad({fn})(0.0)) - 0.5) < 1e-6, 'grad at 0 must be 0.5'
+
+# The incoming cotangent must be USED. jax.grad hands bwd g = 1.0, which hides
+# a rule that returns sigmoid(x) instead of g * sigmoid(x); scaling exposes it.
+scaled = float(jax.grad(lambda t: 3.0 * {fn}(t))(0.0))
+assert abs(scaled - 1.5) < 1e-5, (
+    f'd/dx [3 * log1pexp(x)] at 0 should be 1.5, got {scaled} — bwd must return '
+    'g * sigmoid(x), not sigmoid(x). The cotangent g is its second argument.'
+)
+
+# Composition, so the cotangent reaching bwd is not a constant either.
+chained = float(jax.grad(lambda t: {fn}(2.0 * t))(0.0))
+assert abs(chained - 1.0) < 1e-5, f'chain rule through log1pexp(2x) at 0: {chained}'
 """,
         },
         {

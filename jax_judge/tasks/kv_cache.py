@@ -66,10 +66,11 @@ A cache holds two tensors per layer for every token generated so far:
 $$\text{bytes} = 2 \cdot L \cdot H_{kv} \cdot d_h \cdot T \cdot \text{sizeof(dtype)}$$
 
 Llama-3-70B in bf16: $L = 80$, $H_{kv} = 8$ (grouped-query), $d_h = 128$, so
-$2 \cdot 80 \cdot 8 \cdot 128 \cdot 2 = 320$ KiB **per token**. At 32k context
-that is ~10 GB for a *single* sequence; a batch of 32 needs ~320 GB, more than
-the 140 GB of weights. Past a few thousand tokens the cache, not the model, is
-what caps your batch size — and batch size is throughput. This is why GQA exists
+$2 \cdot 80 \cdot 8 \cdot 128 \cdot 2 = 327{,}680$ bytes $= 320$ KiB **per
+token**. At 32k context that is ~10.7 GB for a *single* sequence; a batch of 32
+needs ~344 GB, well past the 140 GB the weights themselves occupy. Past a few
+thousand tokens the cache, not the model, is what caps your batch size — and
+batch size is throughput. This is why GQA exists
 (64 query heads sharing 8 KV heads cuts that 320 KiB by 8x), why people quantize
 the cache to int8, and why vLLM's PagedAttention allocates fixed-size blocks
 instead of `max_len` per sequence: preallocating for the worst case wastes

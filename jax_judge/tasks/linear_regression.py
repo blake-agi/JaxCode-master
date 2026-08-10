@@ -4,18 +4,22 @@ TASK = {
     "title": "Linear Regression: Closed Form vs Gradient Descent",
     "category": "Training",
     "order": 2,
-    "difficulty": "Easy",
+    "difficulty": "Medium",
     "function_name": "linear_regression",
     "hint": (
-        "Append a ones column: Xb = jnp.concatenate([X, jnp.ones((n, 1))], axis=1), "
-        "solve for theta = [w; b], then split it back. For the closed form use "
-        "jnp.linalg.lstsq(Xb, y)[0] — it runs QR/SVD on Xb itself, so do NOT build "
-        "Xb.T @ Xb. Get ridge for free with the data-augmentation trick: stack "
-        "sqrt(l2) * [I_D | 0] (shape (D, D+1)) under Xb and D zeros under y — the "
-        "extra rows contribute exactly l2*||w||^2 to the residual, and the zero in "
-        "the last column is what leaves the bias unpenalised. For GD, the gradient "
-        "is (2/n) * (Xb.T @ (Xb @ theta - y) + l2 * mask * theta) with "
-        "mask = [1, ..., 1, 0]; iterate it with jax.lax.fori_loop from theta = 0."
+        "Absorb the bias as a constant feature so both methods solve for a single "
+        "vector theta = [w; b], and split it apart again at the end. "
+        "For the closed form, jnp.linalg.lstsq factorises whatever matrix you hand "
+        "it, so the trick is to hand it a matrix whose least-squares residual "
+        "ALREADY contains the ridge penalty — never to build the normal equations "
+        "and add lambda to their diagonal. Ask what extra ROWS you could stack "
+        "under the design matrix (and what to stack under y) so that their squared "
+        "residual is exactly l2 * ||w||^2; whatever those rows put in their last "
+        "column is what decides whether the bias gets penalised. "
+        "For gd, differentiate J by hand — it is one matvec and its transpose — and "
+        "give the ridge term the same bias-excluding treatment. Drive the iteration "
+        "with jax.lax.fori_loop starting from theta = 0; a Python for loop unrolls "
+        "into `steps` copies of the graph, and there is a compile-time test for it."
     ),
     "description": r"""
 Fit a linear model $\hat y = Xw + b$ two ways and return `(w, b)`.
@@ -50,11 +54,13 @@ $\epsilon \approx 1.2 \times 10^{-7}$ — about 7 decimal digits.
 
 Take a degree-6 polynomial design on $t \in [0, 1]$, which is nothing exotic:
 $\kappa(\tilde X) \approx 2 \times 10^4$, so $\kappa(\tilde X^\top \tilde X)
-\approx 4 \times 10^8$. Every digit is gone. Empirically on that problem the
-recovered coefficients are off by ~6 (absolute) via the normal equations and by
-~$4\times 10^{-5}$ via `lstsq`, on identical inputs. QR factorises $\tilde X$
-directly and never squares anything, so its error tracks $\kappa(\tilde X)$ —
-you keep half the digits the normal equations throw away.
+\approx 4 \times 10^8$. Every digit is gone. Run it and the normal equations
+return coefficients wrong in the *first* digit — an absolute error of order 1
+(about 8 on the machine this was written on; once $\kappa \epsilon > 1$ the
+answer is noise, so the exact figure is not reproducible), against
+$\sim 4\times 10^{-5}$ from `lstsq` on identical inputs. QR factorises
+$\tilde X$ directly and never squares anything, so its error tracks
+$\kappa(\tilde X)$ — you keep half the digits the normal equations throw away.
 
 This is also the real reason ridge "stabilises" the fit. Adding $\lambda$ shifts
 every squared singular value up, so the effective condition number becomes
@@ -143,6 +149,8 @@ y = X @ true_w + 0.3
 
 Xb = jnp.concatenate([X, jnp.ones((60, 1))], axis=1)
 print("cond(X~)     =", float(jnp.linalg.cond(Xb)))
+# ~2.6e8 rather than the exact 4.0e8: estimating the condition number of the
+# Gram matrix in float32 is itself past the point where float32 can answer.
 print("cond(X~^T X~)=", float(jnp.linalg.cond(Xb.T @ Xb)))
 
 w_ls, b_ls = linear_regression(X, y)
@@ -229,9 +237,9 @@ w, b = {fn}(X, y)
 err = float(jnp.max(jnp.abs(w - true_w)))
 assert jnp.isfinite(w).all() and jnp.isfinite(b), f'Non-finite fit: {w}, {b}'
 assert err < 1e-2, (
-    f'Max coefficient error {err:.4f}. Solving the normal equations gives ~6 here '
-    'because forming X~^T X~ squares the condition number. Factorise X~ itself '
-    'with jnp.linalg.lstsq / jnp.linalg.qr instead.'
+    f'Max coefficient error {err:.4f}. Solving the normal equations gives an error '
+    'of order 1 here (~8) because forming X~^T X~ squares the condition number. '
+    'Factorise X~ itself with jnp.linalg.lstsq / jnp.linalg.qr instead.'
 )
 assert abs(float(b) - 0.3) < 1e-2, f'intercept {float(b):.5f} vs 0.3'
 """,

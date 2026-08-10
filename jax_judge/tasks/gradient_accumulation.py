@@ -66,11 +66,13 @@ sequence count. Padding-heavy micro-batches otherwise get over-weighted, and the
 effective objective drifts with your batch-shuffling seed.
 
 ### Why it matters
-Accumulation trades compute for memory: activations for one micro-batch at a
-time, but the optimizer sees the statistics of the full batch. It is how a large
-effective batch size survives on limited HBM, and it is the sequential twin of
-data parallelism — the weighted sum here is exactly the weighted all-reduce a
-multi-host job performs.
+Accumulation buys memory with **time**, not with compute: the FLOP count is
+identical, but you only ever hold the activations of one micro-batch, and you
+pay for that in arithmetic intensity — the parameters are re-read from HBM once
+per micro-batch instead of once per step — and in lost parallelism. That is the
+trade that lets a large *effective* batch size survive on limited HBM, and it is
+the sequential twin of data parallelism: the weighted sum here is exactly the
+weighted all-reduce a multi-host job performs across devices.
 
 One thing JAX gives you for free: there is no mutable `.grad` buffer, so the
 classic "forgot to zero the gradients" bug cannot be written. The accumulator is

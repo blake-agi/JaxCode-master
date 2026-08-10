@@ -46,26 +46,32 @@ $H_{kv} = H$ is ordinary MHA; $H_{kv} = 1$ is Multi-Query Attention.
 
 ### Why GQA exists: the KV cache, not the FLOPs
 GQA saves almost no compute. After the repeat, the score and value matmuls are
-byte-for-byte the same size as MHA; only the two `d_model x d_model` KV
-projections shrink. The win is entirely **decode-time memory**.
+FLOP-for-FLOP identical to MHA; only the two KV projection matrices shrink, from
+$d_{model} \times d_{model}$ to $d_{model} \times H_{kv}d_h$. The win is
+entirely **decode-time memory**.
 
 At generation time every past token's K and V must be kept. Per token per layer
 the cache costs $2 \cdot H_{kv} \cdot d_h \cdot \text{bytes}$. For a 70B-class
-model (80 layers, $H = 64$, $d_h = 128$, fp16):
+model (80 layers, $H = 64$, $d_h = 128$, fp16) the whole-model totals are:
 
-| | per token | 4k context | 4k ctx, batch 8 |
+| | per token, all layers | 4k context | 4k ctx, batch 8 |
 |---|---|---|---|
 | MHA ($H_{kv}=64$) | 2.6 MB | 10.7 GB | 86 GB |
 | GQA ($H_{kv}=8$) | 328 KB | 1.3 GB | 10.7 GB |
 | MQA ($H_{kv}=1$) | 41 KB | 168 MB | 1.3 GB |
 
-Autoregressive decoding is memory-**bandwidth** bound: each new token reads the
-entire cache from HBM to produce one token. Shrinking the cache 8x shrinks the
-per-step read 8x, so it is close to an 8x decode speedup as well as the reason a
-long context fits in memory at all. MQA takes this to the limit but measurably
-degrades quality; GQA is the interpolation that keeps ~MHA quality — and it is
-cheap to *uptrain* an existing MHA checkpoint into GQA by mean-pooling the KV
-heads within each group.
+Autoregressive decoding is memory-**bandwidth** bound: producing one token means
+streaming the weights *and* the entire cache out of HBM. Shrinking the cache 8x
+shrinks the cache half of that read 8x. How much of a speedup that is depends on
+which half dominates — at batch 1 and short context the weights do, and GQA buys
+little; at long context or large batch the cache dominates and the gain
+approaches the full 8x. The memory saving is unconditional, and it is often the
+reason the context fits at all.
+
+MQA takes this to the limit but measurably degrades quality; GQA is the
+interpolation that holds roughly MHA quality — and it is cheap to *uptrain* an
+existing MHA checkpoint into GQA by mean-pooling the KV heads within each group,
+then continuing training for a small fraction of the original budget.
 
 ### The trap
 `jnp.repeat(k, r, axis=1)` and `jnp.tile(k, (1, r, 1, 1))` produce arrays of

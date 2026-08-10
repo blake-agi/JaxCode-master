@@ -7,12 +7,16 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "PatchEmbedding",
     "hint": (
-        "Two reshapes with a transpose between them. From (B, H, W, C) go to "
-        "(B, H//P, P, W//P, P, C), then transpose to (B, H//P, W//P, P, P, C) so the "
-        "two patch-grid axes sit next to each other and the two within-patch axes sit "
-        "next to each other, then reshape to (B, N, P*P*C). Skipping the transpose "
-        "gives the right SHAPE and the wrong patches. Finally project with a single "
-        "(P*P*C, embed_dim) weight: patches @ w + b."
+        "It is two reshapes with one transpose between them, and no indexing or "
+        "loops. Start by splitting each spatial axis in two — H becomes "
+        "(grid_rows, P) and W becomes (grid_cols, P) — which is a free reshape "
+        "to six axes. Now look at the axis order you have versus the order you "
+        "need: for a final reshape to (B, N, P*P*C) to produce squares, the two "
+        "grid axes must be adjacent and outermost and the two within-patch axes "
+        "must be adjacent and innermost, with C last. One transpose gets you "
+        "there. To check yourself, compare token 0 against "
+        "x[0, :P, :P, :].reshape(-1) before you touch the projection, which is "
+        "just a single (P*P*C, embed_dim) matmul plus a bias."
     ),
     "description": r"""
 Implement the **patch embedding** stem of a Vision Transformer as an
@@ -35,11 +39,14 @@ $$z_n = \mathrm{flatten}(\text{patch}_n)\,W + b,
 - Output `(B, N, embed_dim)` with patches in **row-major grid order**: patch
   index `n = row * (W // P) + col`
 - Within a patch, flatten in `(patch_row, patch_col, channel)` order
-- Expose `self.num_patches`
+- Expose `self.num_patches` (computed from `img_size`), but read the actual
+  grid off `x.shape` in `__call__` — the tests feed a non-square image through
+  a module configured with a square `img_size`
 - Do the reshaping yourself — no `jax.lax.conv_general_dilated`, no
   `einops.rearrange`
-- One projection matrix of shape `(P*P*C, embed_dim)` plus a bias, both
-  `nnx.Param`
+- One projection matrix plus a bias, both `nnx.Param`, named `self.w` of shape
+  `(P*P*C, embed_dim)` and `self.b` of shape `(embed_dim,)` — the tests write
+  to them directly
 
 ### This layer is a strided convolution
 `patchify + project` is *exactly* a convolution with kernel size `P` and stride
@@ -92,7 +99,8 @@ class PatchEmbedding(nnx.Module):
         *,
         rngs: nnx.Rngs,
     ):
-        # Remember to set self.num_patches
+        # Set self.num_patches, plus the projection params self.w
+        # (patch_size**2 * in_channels, embed_dim) and self.b (embed_dim,).
         pass  # Replace this
 
     def __call__(self, x):

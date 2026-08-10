@@ -7,10 +7,11 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "relu",
     "hint": (
-        "jnp.where(x > 0, x, 0.0) is the cleanest route, and it gives a gradient "
-        "of exactly 0 at x=0. jnp.maximum(x, 0.0) also works but hands you a "
-        "subgradient of 0.5 there — either is defensible, so know which one you "
-        "wrote and why."
+        "One element-wise expression, no branching. Two obvious spellings exist — "
+        "a `jnp.where` on the sign of x, or an element-wise max against 0.0 — and "
+        "they agree everywhere except at x=0, where autodiff has to pick a "
+        "subgradient. Either passes; know which one you wrote and what it does "
+        "at zero."
     ),
     "description": r"""
 Implement the **ReLU** activation from scratch.
@@ -31,9 +32,16 @@ subgradient. Different formulations give different answers:
 | `jnp.where(x > 0, x, 0.0)` | `0.0` |
 | `jnp.maximum(x, 0.0)` | `0.5` |
 
-Anything in `[0, 1]` is a valid subgradient. This exact question — *"what is the
-derivative of ReLU at zero?"* — is a very common warm-up, and the answer
-interviewers want is "it's a subgradient, frameworks pick a convention."
+The `0.5` is not arbitrary: JAX's JVP rule for `max` splits the cotangent evenly
+between tied arguments, so a tie at `x = 0` sends half the gradient to each side.
+PyTorch behaves identically — `torch.relu` gives `0.0` at zero, `torch.maximum`
+gives `0.5`.
+
+Anything in `[0, 1]` is a valid subgradient, so neither is wrong. This exact
+question — *"what is the derivative of ReLU at zero?"* — is a very common warm-up,
+and the answer interviewers want is "it isn't differentiable there; frameworks
+pick a subgradient by convention, and the choice is invisible in practice because
+exact ties essentially never occur in float."
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -112,7 +120,7 @@ assert 0.0 <= float(g[1]) <= 1.0, (
 """,
         },
         {
-            "name": "No built-in activation used",
+            "name": "Agrees with jax.nn.relu; scalar and 3-D inputs",
             "code": """
 import jax
 import jax.numpy as jnp
@@ -122,7 +130,8 @@ assert jnp.allclose({fn}(x), jax.nn.relu(x), atol=1e-6), 'Disagrees with jax.nn.
 
 # 3-D and scalar inputs should behave too.
 x3 = jax.random.normal(jax.random.key(2), (2, 3, 4))
-assert {fn}(x3).shape == (2, 3, 4), f'{{fn}}(x3).shape'
+out3 = {fn}(x3)
+assert out3.shape == (2, 3, 4), f'3-D input: got {out3.shape} vs (2, 3, 4)'
 assert jnp.allclose({fn}(jnp.array(-5.0)), 0.0), 'Scalar negative input'
 assert jnp.allclose({fn}(jnp.array(5.0)), 5.0), 'Scalar positive input'
 """,

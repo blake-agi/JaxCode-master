@@ -56,21 +56,26 @@ to be in the current batch, so predictions change depending on what else you
 batched alongside them — and with batch size 1 the variance is 0 and everything
 collapses.
 
-### ⚠️ Flax and PyTorch genuinely disagree here
-Both frameworks **normalise** with the biased (population) variance. But they
-update the running buffer differently:
+### ⚠️ Flax and PyTorch genuinely disagree here — twice
+Both frameworks **normalise** with the biased (population) variance. Everything
+else about the running buffer differs:
 
-| | `running_var` update uses |
-|---|---|
-| `flax.nnx.BatchNorm` | **biased** variance (`ddof=0`) |
-| `torch.nn.BatchNorm1d` | **unbiased** variance (`ddof=1`) |
+| | `flax.nnx.BatchNorm` | `torch.nn.BatchNorm1d` |
+|---|---|---|
+| `running_var` update uses | **biased** variance (`ddof=0`) | **unbiased** variance (`ddof=1`) |
+| `momentum` means | weight kept on the **old** value | weight given to the **new** value |
+| default `momentum` | `0.99` | `0.1` |
+| feature axis | last (`axis=-1`, `NHWC`) | axis 1 (`NCHW`) |
 
-They differ by exactly the Bessel factor $n/(n-1)$ — 3.2% at batch size 32, and
-it only shows up at **inference**, after the weights look fine in training.
-This task follows the Flax convention. If you ever port BatchNorm weights
-between the two frameworks, rescale `running_var` or your eval-mode outputs will
-be quietly wrong. (Verified empirically — see
-`jax_pytorch_comparison/crosscheck_vs_torch.py`.)
+So the two variance conventions differ by exactly the Bessel factor $n/(n-1)$ —
+3.2% at batch size 32 — and Flax's `momentum=0.9` is PyTorch's `momentum=0.1`,
+not `0.9`. Get that one backwards and your buffers track the *last* batch instead
+of the running average.
+
+Both bugs are invisible during training, because training never reads the
+buffers. They surface at **inference**, after the weights already look fine.
+This task follows the Flax convention throughout. (Verified empirically against
+PyTorch — see `jax_pytorch_comparison/crosscheck_vs_torch.py`.)
 """,
     "stub": '''import jax
 import jax.numpy as jnp

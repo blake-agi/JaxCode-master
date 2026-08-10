@@ -7,10 +7,12 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "pairwise_sq_dist",
     "hint": (
-        "Start with the scalar-of-the-problem: a function of two single vectors, "
-        "sq_dist(x, y) = sum((x - y) ** 2). Then vmap it over y to get one row "
-        "(in_axes=(None, 0)), then vmap that over x to get the full matrix "
-        "(in_axes=(0, None))."
+        "Write the problem for ONE pair of vectors first: two 1-D arrays in, a "
+        "scalar out. Then add the batch axes with vmap, one at a time. Each vmap "
+        "maps over one argument while holding the other fixed, and in_axes=None is "
+        "how you say 'this argument is not batched'. You need two nested vmaps — "
+        "and the order you nest them in decides whether you get (N, M) or its "
+        "transpose, so reason about which axis the OUTER one contributes."
     ),
     "description": r"""
 Given `X` of shape `(N, D)` and `Y` of shape `(M, D)`, compute the matrix of

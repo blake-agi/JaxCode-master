@@ -7,14 +7,15 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "clip_by_global_norm",
     "hint": (
-        "Collect every array with jax.tree.leaves(grads), then "
-        "norm = jnp.sqrt(sum(jnp.sum(l ** 2) for l in leaves)) — one scalar for the "
-        "WHOLE tree, not one per leaf. Rescale with a single "
-        "scale = jnp.minimum(1.0, max_norm / (norm + 1e-6)) applied via "
-        "jax.tree.map(lambda g: g * scale, grads). Do not write "
-        "`if norm > max_norm:` — that is a Python branch on a traced value and "
-        "explodes under jit; the eps in the denominator is what stops "
-        "0 * (max_norm / 0) = NaN when every gradient is zero."
+        "jax.tree.leaves flattens any pytree to a list of arrays. Accumulate the "
+        "sum of squares across ALL of them and take a single square root at the "
+        "end — one norm for the whole tree, not one per leaf — then one scalar "
+        "multiplier, broadcast back over the tree with jax.tree.map. "
+        "Do not write `if norm > max_norm:`: that is a Python branch on a traced "
+        "value and dies under jit. The branch-free version is a jnp.minimum "
+        "against 1.0, which conveniently also handles the all-zero tree — but "
+        "look hard at what the quotient inside that minimum evaluates to when "
+        "the norm is exactly 0 before you trust it."
     ),
     "description": r"""
 Clip a gradient pytree by its **global** norm and return the rescaled pytree.
@@ -38,7 +39,7 @@ single vector, and one scalar factor is applied to **every** leaf.
 
 ### Why global, and not per-tensor
 Per-tensor clipping (`each leaf independently scaled to at most tau`) uses a
-*different* multiplier per leaf. That does not shrink the update — it
+*different* multiplier per leaf. That does not merely shrink the update — it
 **rotates** it. In the flattened parameter space the direction of the update is
 a unit vector; multiplying block $A$ by 0.1 and block $B$ by 1.0 produces a
 descent direction that is no longer parallel to $-\nabla L$, so you are no
@@ -73,11 +74,20 @@ every parameter on the next update. Writing the factor as
 `minimum` selects the safe branch, and the epsilon keeps the quotient finite in
 the first place.
 
-That epsilon earns its keep in one more place. $\sqrt{\cdot}$ has an *infinite*
-derivative at zero, so `jax.grad` of `jnp.sqrt(jnp.sum(g ** 2))` at `g = 0`
-returns `NaN` — an unguarded norm is a landmine the moment clipping sits inside
-anything you differentiate through, which is exactly where it ends up in
-meta-learning and in differentiable-optimizer research code.
+That fixes the **forward** pass. It does not fix the backward pass, and that is
+the follow-up worth being ready for. $\sqrt{\cdot}$ has an *infinite* derivative
+at zero, so `jax.grad` of `jnp.sqrt(jnp.sum(g ** 2))` at `g = 0` is
+$0/0 = \text{NaN}$. Note where the epsilon above actually sits: in the
+*division*, not under the root — so the implementation asked for here still
+differentiates to `NaN` at `g = 0`.
+
+That is fine for ordinary training, where the clip is applied to gradients and
+never differentiated through. It is not fine for meta-learning, learned
+optimizers, or unrolled inner loops, where clipping ends up inside the graph. To
+make it safe there the epsilon has to move *inside* the root —
+`jnp.sqrt(sq_sum + 1e-12)` — and you pay for it by no longer reporting a global
+norm of exactly `0.0` on a zero tree (you get $10^{-6}$). Two different
+epsilons, two different failures; knowing which one you need is the question.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -107,9 +117,10 @@ def clip_by_global_norm(grads, max_norm):
     sq_sum = sum(jnp.sum(jnp.square(leaf)) for leaf in leaves)
     global_norm = jnp.sqrt(sq_sum)
 
-    # Branch-free so it survives jit; the eps stops 0/0 -> NaN on zero grads.
-    # min(1, tau/||g||) leaves the tree untouched when it is already inside
-    # the ball, and is exactly 1.0 in that case so `g * scale is g` numerically.
+    # Branch-free so it survives jit. On a zero tree the quotient would be
+    # max_norm/0 = inf and `g * inf` would be 0 * inf = NaN; the eps keeps the
+    # quotient finite, and the minimum then pins the scale at exactly 1.0.
+    # Exactly 1.0 also means an under-threshold tree comes back bit-for-bit.
     scale = jnp.minimum(1.0, max_norm / (global_norm + 1e-6))
 
     # The SAME scalar hits every leaf -> the direction is preserved exactly.

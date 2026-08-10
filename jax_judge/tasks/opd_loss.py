@@ -7,12 +7,16 @@ TASK = {
     "difficulty": "Hard",
     "function_name": "opd_loss",
     "hint": (
-        "Temperature-scale BOTH sets of logits before the softmax. The KL is "
-        "reverse — sum_v p_student(v) * (log p_student(v) - log p_teacher(v)) — "
-        "so the expectation is under the STUDENT. Get both log-probs with "
-        "jax.nn.log_softmax and recover p_student as exp(log p_student). Combine "
-        "multiple teachers with teacher_weights, apply the token mask, and "
-        "multiply the whole thing by temperature ** 2."
+        "Promote a single teacher to a stack of one on the way in and the two "
+        "input shapes stop being two code paths. After that the axes tell you "
+        "the whole story: log_softmax over vocab, sum over vocab to collapse "
+        "(K, B, S, V) to (K, B, S), weighted-sum over teachers to (B, S), then "
+        "the masked mean to a scalar. Never leave the log domain except to "
+        "recover the student probabilities that weight the sum — exp of a "
+        "log_softmax is safe, log of a softmax is not. The two things the tests "
+        "will catch: a KL whose weighting distribution is the wrong one of the "
+        "two (it is not symmetric, so it really is wrong, not just different), "
+        "and forgetting that the temperature has to be undone as well as applied."
     ),
     "description": r"""
 Implement the **on-policy distillation** loss: match a student's next-token

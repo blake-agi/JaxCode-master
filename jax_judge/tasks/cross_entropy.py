@@ -12,10 +12,11 @@ TASK = {
         "target's log-probability by gathering that index rather than "
         "materialising a one-hot matrix. Label smoothing is a convex blend of the "
         "target's NLL and the mean log-probability over the vocabulary. For "
-        "ignore_index the trap is that an out-of-range index does NOT raise in "
-        "JAX — it silently clamps — so sanitise the indices before gathering, "
-        "then mask the per-token losses and divide by the number of valid tokens, "
-        "not the total."
+        "ignore_index the trap is that a bad index does NOT raise in JAX: "
+        "jnp.take_along_axis defaults to mode='fill', so a sentinel like -100 "
+        "gathers NaN, while -1 quietly wraps round to the LAST class. Sanitise "
+        "the indices before gathering, then mask the per-token losses and divide "
+        "by the number of valid tokens, not the total."
     ),
     "description": r"""
 Implement **cross-entropy loss directly from logits**, with optional label
@@ -50,11 +51,15 @@ exponent is now $\le 0$, so the largest term is exactly `1.0` and the sum can
 never overflow.
 
 **Underflow — the one that actually bites.** Even with no overflow, a confidently
-*wrong* prediction gives $p_{t} < 10^{-38}$, which flushes to `0.0`, and
-`log(0) = -inf` makes the loss `inf` and every gradient `nan`. The fused form
-never materialises $p_t$: it computes $z_t - \log\sum_k e^{z_k}$, a perfectly
-finite number like $-120$. Your loss stays large-but-finite and training
-recovers instead of poisoning every parameter with `nan`.
+*wrong* prediction pushes $p_t$ under the float32 floor: normals stop at
+$\approx 1.2\times10^{-38}$ and subnormals at $\approx 1.4\times10^{-45}$, and
+XLA flushes subnormals to zero on accelerators anyway. Once $p_t$ rounds to
+`0.0`, `log(0) = -inf` makes the loss `inf` and every gradient `nan`. The fused
+form never materialises $p_t$: it computes $z_t - \log\sum_k e^{z_k}$, a
+perfectly finite number like $-120$ (that is $p_t \approx 10^{-52}$, hopelessly
+unrepresentable, yet its logarithm is an ordinary float). Your loss stays
+large-but-finite and training recovers instead of poisoning every parameter
+with `nan`.
 
 There is a gradient bonus too. $\partial \ell / \partial z = p - q$ — a clean,
 bounded expression that autodiff derives exactly from the fused form. Compose
@@ -66,13 +71,21 @@ in `stop_gradient` changes nothing mathematically and keeps the backward graph
 smaller.
 
 ### The interview angle
-`ignore_index` is where candidates lose the plot. In a padded LM batch, 30–60%
-of positions are `<pad>`. Average over all of them and two things go wrong: the
-loss is scaled down by the pad fraction (so it silently changes meaning when the
-batch composition changes), and the gradient actively teaches the model to
-predict `<pad>`. Note also that you must clamp the index *before* the gather —
-JAX has no bounds checking, so `take_along_axis` with `-1` quietly reads the
-last class instead of raising, and you get a plausible-looking wrong loss.
+`ignore_index` is where candidates lose the plot. Pad-to-longest batching over
+variable-length sequences routinely leaves a third or more of the positions as
+`<pad>`. Average over all of them and two things go wrong: the loss is scaled
+down by the pad fraction (so it silently changes meaning when the batch
+composition changes), and the gradient actively teaches the model to predict
+`<pad>`.
+
+The second half is the index itself, and it is worth knowing exactly what JAX
+does here because it does **not** raise. `jnp.take_along_axis` defaults to
+`mode="fill"`, so a genuinely out-of-range sentinel like `-100` gathers `NaN` —
+which then propagates through the mean and poisons the whole batch even though
+you "masked" it afterwards. And `-1` does not go out of range at all: it wraps
+round to the last class, so you get a plausible-looking wrong loss with nothing
+to alert you. Both are fixed the same way — substitute a valid index *before*
+the gather — but only if you knew there was something to fix.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -121,7 +134,8 @@ def cross_entropy_loss(logits, targets, *, label_smoothing=0.0, ignore_index=-1)
     n_valid = jnp.sum(valid)
     return jnp.sum(per_position) / jnp.maximum(n_valid, 1)
 ''',
-    "demo": '''import jax.numpy as jnp
+    "demo": '''import jax
+import jax.numpy as jnp
 
 # Uniform logits over 3 classes -> loss is exactly log(3).
 print("uniform:", cross_entropy_loss(jnp.zeros((1, 3)), jnp.array([0])), "vs", jnp.log(3.0))
@@ -132,13 +146,23 @@ print("big logits, correct class:", cross_entropy_loss(big, jnp.array([0])))
 print("naive softmax-then-log would give:",
       -jnp.log(jnp.exp(big) / jnp.exp(big).sum(-1, keepdims=True))[0, 0])
 
-# Padding: the last two positions are masked out.
-logits = jnp.zeros((4, 5))
-targets = jnp.array([1, 2, -1, -1])
-print("masked mean:", cross_entropy_loss(logits, targets, ignore_index=-1))
-print("unmasked mean would also be log(5) here, but the gradient would not be:")
-print("  smoothing 0.1:", cross_entropy_loss(logits, targets, label_smoothing=0.1,
-                                             ignore_index=-1))
+# Padding. Non-uniform logits, so the denominator genuinely matters.
+logits = jax.random.normal(jax.random.key(0), (4, 5)) * 3.0
+print("\\nmean over the 2 real tokens:",
+      float(cross_entropy_loss(logits, jnp.array([1, 2, -1, -1]), ignore_index=-1)))
+print("mean over all 4 positions  :",
+      float(cross_entropy_loss(logits, jnp.array([1, 2, 0, 0]))), " <- wrong denominator")
+
+# Why the index must be sanitised BEFORE the gather: JAX never raises here.
+print("\\ngather at -1  ->", jnp.take_along_axis(logits, jnp.full((4, 1), -1), -1)[:, 0])
+print("               ...that is column 4, read silently")
+print("gather at -100->", jnp.take_along_axis(logits, jnp.full((4, 1), -100), -1)[:, 0])
+print("               ...NaN, which masking afterwards will not remove")
+
+# Smoothing penalises over-confidence.
+sharp, t0 = jnp.array([[20.0, 0.0, 0.0]]), jnp.array([0])
+print("\\nsharp, alpha=0.0:", float(cross_entropy_loss(sharp, t0)))
+print("sharp, alpha=0.1:", float(cross_entropy_loss(sharp, t0, label_smoothing=0.1)))
 ''',
     "tests": [
         {
