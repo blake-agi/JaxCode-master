@@ -1,146 +1,140 @@
-"""BatchNorm with running statistics — nnx.BatchStat and mutable module state."""
+"""BatchNorm as a pure function — and why JAX must return the running stats."""
 
 TASK = {
     "title": "Implement BatchNorm",
     "category": "Core Ops & Layers",
     "order": 7,
+    "number": "07",
     "difficulty": "Medium",
-    "function_name": "BatchNorm",
+    "function_name": "my_batch_norm",
     "hint": (
-        "Normalise over every axis EXCEPT the feature axis — for (N, C) that is "
-        "axis 0, for (N, H, W, C) it is the first three. Derive the axes from "
-        "x.ndim rather than hard-coding them, or the layer only works for one "
-        "input rank. Training and eval differ in TWO ways: which statistics you "
-        "normalise with, and whether you write to the running buffers at all. "
-        "Store those buffers as nnx.BatchStat rather than nnx.Param so the "
-        "optimizer never updates them."
+        "Reduce over axis 0 (the batch), not the last axis — that is the whole "
+        "difference from LayerNorm. Use the biased variance for both the "
+        "normalisation and the running-buffer update. In training you normalise "
+        "with the batch statistics and move the buffers toward them; at eval you "
+        "use the buffers and touch nothing. JAX arrays are immutable, so the new "
+        "buffers have to be RETURNED, not updated in place."
     ),
     "description": r"""
-Implement **Batch Normalization** with running statistics.
+Implement **Batch Normalization** with running statistics, as a pure function.
 
-**Training** — normalise with the statistics of the current batch, and update
-the running buffers:
+**Training** — normalise with the current batch's statistics, and move the
+running buffers toward them:
 
-$$\mu_{run} \leftarrow m\,\mu_{run} + (1-m)\,\mu_{batch}$$
+$$\mu_{run} \leftarrow (1-m)\,\mu_{run} + m\,\mu_{batch}$$
 
-**Inference** — normalise with the stored running statistics, update nothing.
+**Inference** — normalise with the stored buffers, update nothing.
 
-$$y = \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}}\gamma + \beta$$
+$$y = \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}} \odot \gamma + \beta$$
 
-### Rules
-- Signature: `BatchNorm(num_features, *, momentum=0.9, eps=1e-5, rngs=None)`
-- `__call__(x, use_running_average=False)`
-- `self.scale`, `self.bias` → `nnx.Param` (ones / zeros)
-- `self.running_mean`, `self.running_var` → `nnx.BatchStat` (zeros / ones)
-- Reduce over **all axes except the last** — works for `(N, C)` and `(N, H, W, C)`
-- Use the **biased** batch variance
-- Running buffers must update **only** in training mode
-
-### Why `nnx.BatchStat` and not `nnx.Param`
-Running statistics are **state**, not parameters: they are updated by an
-exponential moving average, not by gradient descent. Tagging them `BatchStat`
-lets you filter them out when you build the optimizer:
-
+### Signature
 ```python
-params = nnx.state(model, nnx.Param)        # optimizer sees only these
-stats  = nnx.state(model, nnx.BatchStat)    # carried along, never differentiated
+def my_batch_norm(x, gamma, beta, running_mean, running_var,
+                  eps=1e-5, momentum=0.1, training=True):
+    ...  # -> (out, running_mean, running_var)
 ```
 
-NNX modules are **mutable**, so `self.running_mean[...] = ...` inside `__call__`
-just works — no threading of a `mutable` collection through every call the way
-Linen requires. This is the clearest demonstration of what NNX buys you.
+### Rules
+- Do **not** use `nnx.BatchNorm`
+- Reduce over the **batch** axis (axis 0), not the feature axis
+- Use the **biased** variance (`ddof=0`)
+- `momentum=0.1` means the new batch gets weight `0.1`
+- Buffers update **only** in training mode
 
-### The classic gotcha
-Forgetting to switch to eval mode means inference normalises by whatever happens
-to be in the current batch, so predictions change depending on what else you
-batched alongside them — and with batch size 1 the variance is 0 and everything
-collapses.
+### ⚠️ The one place JAX forces a different signature
+PyTorch updates the buffers in place:
 
-### ⚠️ Flax and PyTorch genuinely disagree here — twice
-Both frameworks **normalise** with the biased (population) variance. Everything
-else about the running buffer differs:
+```python
+running_mean.mul_(1 - momentum).add_(momentum * batch_mean)   # mutates the caller's tensor
+```
 
-| | `flax.nnx.BatchNorm` | `torch.nn.BatchNorm1d` |
-|---|---|---|
-| `running_var` update uses | **biased** variance (`ddof=0`) | **unbiased** variance (`ddof=1`) |
-| `momentum` means | weight kept on the **old** value | weight given to the **new** value |
-| default `momentum` | `0.99` | `0.1` |
-| feature axis | last (`axis=-1`, `NHWC`) | axis 1 (`NCHW`) |
+JAX arrays are **immutable** — there is no `mul_`. So this version **returns**
+the new buffers instead:
 
-So the two variance conventions differ by exactly the Bessel factor $n/(n-1)$ —
-3.2% at batch size 32 — and Flax's `momentum=0.9` is PyTorch's `momentum=0.1`,
-not `0.9`. Get that one backwards and your buffers track the *last* batch instead
-of the running average.
+```python
+out, running_mean, running_var = my_batch_norm(x, gamma, beta,
+                                               running_mean, running_var)
+```
 
-Both bugs are invisible during training, because training never reads the
-buffers. They surface at **inference**, after the weights already look fine.
-This task follows the Flax convention throughout. (Verified empirically against
-PyTorch — see `jax_pytorch_comparison/crosscheck_vs_torch.py`.)
+This is not a workaround, it is the JAX model: state is threaded through as
+values rather than hidden in objects, which is exactly what makes the function
+`jit`-able and free of side effects. (`nnx.BatchStat` exists for when you *do*
+want the buffers to live in a module — see how `nnx.BatchNorm` does it.)
+
+### BatchNorm vs LayerNorm
+LayerNorm reduces over features, per example — so it is independent of batch
+size and works with a batch of 1. BatchNorm reduces over the batch, which
+couples examples to each other: predictions change depending on what else was
+batched alongside them, and with batch size 1 the variance is 0 and everything
+collapses. That coupling is why transformers use LayerNorm.
+
+### A note on the variance convention
+This task uses the biased variance for the running buffer, matching
+`flax.nnx.BatchNorm`. Real `torch.nn.BatchNorm1d` differs — it updates the
+buffer with the *unbiased* variance while normalising with the biased one. The
+gap is the Bessel factor $n/(n-1)$, it only shows up at inference, and it is a
+classic porting bug. See `jax_pytorch_comparison/crosscheck_vs_torch.py`.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
-from flax import nnx
 
 
-class BatchNorm(nnx.Module):
-    """BatchNorm over the last (feature) axis, with running statistics."""
+def my_batch_norm(x, gamma, beta, running_mean, running_var,
+                  eps=1e-5, momentum=0.1, training=True):
+    """BatchNorm over the batch axis, with running statistics.
 
-    def __init__(self, num_features: int, *, momentum: float = 0.9,
-                 eps: float = 1e-5, rngs: nnx.Rngs = None):
-        pass  # Replace this
+    Args:
+        x:            (N, D) array
+        gamma:        (D,) scale
+        beta:         (D,) shift
+        running_mean: (D,) buffer
+        running_var:  (D,) buffer
+        eps:          stability term inside the sqrt
+        momentum:     weight given to the new batch statistics
+        training:     use batch stats and update buffers, or use buffers as-is
 
-    def __call__(self, x, use_running_average: bool = False):
-        """(..., num_features) -> same shape."""
-        pass  # Replace this
+    Returns:
+        (out, running_mean, running_var) — JAX cannot mutate the buffers
+        in place, so the updated ones come back as return values.
+    """
+    pass  # Replace this
 ''',
     "solution": '''import jax
 import jax.numpy as jnp
-from flax import nnx
 
 
-class BatchNorm(nnx.Module):
-    def __init__(self, num_features: int, *, momentum: float = 0.9,
-                 eps: float = 1e-5, rngs: nnx.Rngs = None):
-        self.scale = nnx.Param(jnp.ones((num_features,)))
-        self.bias = nnx.Param(jnp.zeros((num_features,)))
-        # BatchStat, not Param: updated by EMA, never by the optimizer.
-        self.running_mean = nnx.BatchStat(jnp.zeros((num_features,)))
-        self.running_var = nnx.BatchStat(jnp.ones((num_features,)))
-        self.momentum = momentum
-        self.eps = eps
-        self.num_features = num_features
+def my_batch_norm(x, gamma, beta, running_mean, running_var,
+                  eps=1e-5, momentum=0.1, training=True):
+    if training:
+        # Reduce over the BATCH axis. Biased variance (ddof=0).
+        batch_mean = jnp.mean(x, axis=0)
+        batch_var = jnp.var(x, axis=0)
 
-    def __call__(self, x, use_running_average: bool = False):
-        if use_running_average:
-            mean = self.running_mean[...]
-            var = self.running_var[...]
-        else:
-            # Every axis except the feature axis.
-            reduce_axes = tuple(range(x.ndim - 1))
-            mean = jnp.mean(x, axis=reduce_axes)
-            var = jnp.var(x, axis=reduce_axes)
-            m = self.momentum
-            # NNX modules are mutable — assign the new buffers directly.
-            self.running_mean[...] = m * self.running_mean[...] + (1 - m) * mean
-            self.running_var[...] = m * self.running_var[...] + (1 - m) * var
+        # PyTorch would do running_mean.mul_(1-m).add_(m*batch_mean) in place.
+        # JAX arrays are immutable, so we build new buffers and return them.
+        running_mean = (1 - momentum) * running_mean + momentum * batch_mean
+        running_var = (1 - momentum) * running_var + momentum * batch_var
 
-        x_hat = (x - mean) / jnp.sqrt(var + self.eps)
-        return x_hat * self.scale + self.bias
+        mean, var = batch_mean, batch_var
+    else:
+        mean, var = running_mean, running_var
+
+    x_norm = (x - mean) / jnp.sqrt(var + eps)
+    return gamma * x_norm + beta, running_mean, running_var
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
-from flax import nnx
 
-bn = BatchNorm(4)
 x = jax.random.normal(jax.random.key(0), (32, 4)) * 3.0 + 5.0
+gamma, beta = jnp.ones(4), jnp.zeros(4)
+rm, rv = jnp.zeros(4), jnp.ones(4)
 
-print("running_mean before:", bn.running_mean[...])
-out = bn(x)                       # training mode
-print("running_mean after: ", bn.running_mean[...])
-print("train-mode output mean:", out.mean(0), "(~0)")
+out, rm, rv = my_batch_norm(x, gamma, beta, rm, rv, training=True)
+print("train-mode column means:", out.mean(0), "(~0)")
+print("running_mean after 1 step:", rm, "(moved 10% toward the batch mean)")
 
-eval_out = bn(x, use_running_average=True)
-print("eval-mode output mean: ", eval_out.mean(0), "(NOT ~0 — uses running stats)")
+eval_out, _, _ = my_batch_norm(x, gamma, beta, rm, rv, training=False)
+print("eval-mode column means: ", eval_out.mean(0), "(NOT ~0 — uses the buffers)")
 ''',
     "tests": [
         {
@@ -149,174 +143,149 @@ print("eval-mode output mean: ", eval_out.mean(0), "(NOT ~0 — uses running sta
 import jax
 import jax.numpy as jnp
 
-bn = {fn}(8)
-x = jax.random.normal(jax.random.key(0), (32, 8)) * 4.0 + 2.0
-out = bn(x, use_running_average=False)
+x = jax.random.normal(jax.random.key(0), (32, 4)) * 4.0 + 2.0
+out, rm, rv = {fn}(x, jnp.ones(4), jnp.zeros(4), jnp.zeros(4), jnp.ones(4), training=True)
 
 assert out.shape == x.shape, f'Shape mismatch: {out.shape} vs {x.shape}'
+col_means = jnp.mean(out, axis=0)
+col_stds = jnp.std(out, axis=0)
+assert jnp.allclose(col_means, 0.0, atol=1e-4), f'Column means should be ~0, got {col_means}'
+assert jnp.allclose(col_stds, 1.0, atol=1e-3), (
+    f'Column stds should be ~1, got {col_stds}. Below 1 means you used the '
+    'unbiased variance — BatchNorm normalises with the biased one.'
+)
+""",
+        },
+        {
+            "name": "Reduces over the batch axis, not the features",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+# Rows are proportional; columns have very different scales. BatchNorm works
+# per COLUMN, so every column must come out standardised.
+x = jnp.array([[1.0, 100.0], [2.0, 200.0], [3.0, 300.0], [4.0, 400.0]])
+out, _, _ = {fn}(x, jnp.ones(2), jnp.zeros(2), jnp.zeros(2), jnp.ones(2), training=True)
+
 assert jnp.allclose(jnp.mean(out, axis=0), 0.0, atol=1e-4), (
-    f'Per-feature mean should be ~0, got {jnp.mean(out, axis=0)}'
+    f'Column means should be ~0, got {jnp.mean(out, axis=0)}. '
+    'Reducing over the last axis is LayerNorm, not BatchNorm.'
 )
-assert jnp.allclose(jnp.std(out, axis=0), 1.0, atol=1e-3), (
-    f'Per-feature std should be ~1, got {jnp.std(out, axis=0)}'
+assert jnp.allclose(out[:, 0], out[:, 1], atol=1e-4), (
+    'Both columns are the same up to scale, so BatchNorm must map them identically'
 )
 """,
         },
         {
-            "name": "Correct variable kinds",
-            "code": """
-import jax.numpy as jnp
-from flax import nnx
-
-bn = {fn}(4)
-
-assert isinstance(bn.scale, nnx.Param), f'scale must be nnx.Param, got {type(bn.scale)}'
-assert isinstance(bn.bias, nnx.Param), f'bias must be nnx.Param, got {type(bn.bias)}'
-assert isinstance(bn.running_mean, nnx.BatchStat), (
-    f'running_mean must be nnx.BatchStat (state, not a learnable parameter), '
-    f'got {type(bn.running_mean)}'
-)
-assert isinstance(bn.running_var, nnx.BatchStat), (
-    f'running_var must be nnx.BatchStat, got {type(bn.running_var)}'
-)
-
-assert jnp.allclose(bn.running_mean[...], 0.0), 'running_mean must start at zeros'
-assert jnp.allclose(bn.running_var[...], 1.0), 'running_var must start at ones'
-assert jnp.allclose(bn.scale[...], 1.0) and jnp.allclose(bn.bias[...], 0.0)
-
-# Params and stats must be separable — this is what the optimizer relies on.
-params = nnx.state(bn, nnx.Param)
-stats = nnx.state(bn, nnx.BatchStat)
-import jax as _jax
-assert len(_jax.tree.leaves(params)) == 2, 'Expected exactly 2 Param leaves'
-assert len(_jax.tree.leaves(stats)) == 2, 'Expected exactly 2 BatchStat leaves'
-""",
-        },
-        {
-            "name": "Running stats update with the right EMA",
+            "name": "Running buffers update with the right momentum",
             "code": """
 import jax
 import jax.numpy as jnp
 
-bn = {fn}(4, momentum=0.9)
-x = jax.random.normal(jax.random.key(1), (64, 4)) * 2.0 + 3.0
+x = jax.random.normal(jax.random.key(1), (16, 4)) * 2.0 + 3.0
+rm0, rv0 = jnp.zeros(4), jnp.ones(4)
+_, rm, rv = {fn}(x, jnp.ones(4), jnp.zeros(4), rm0, rv0, momentum=0.1, training=True)
 
-batch_mean = jnp.mean(x, axis=0)
-batch_var = jnp.var(x, axis=0)
-
-bn(x, use_running_average=False)
-
-expected_mean = 0.9 * 0.0 + 0.1 * batch_mean
-expected_var = 0.9 * 1.0 + 0.1 * batch_var
-
-assert jnp.allclose(bn.running_mean[...], expected_mean, atol=1e-4), (
-    f'{bn.running_mean[...]} vs {expected_mean} — check momentum * old + (1 - momentum) * new'
+bm, bv = jnp.mean(x, axis=0), jnp.var(x, axis=0)
+assert jnp.allclose(rm, 0.9 * rm0 + 0.1 * bm, atol=1e-5), (
+    f'running_mean should be (1-m)*old + m*batch, got {rm}'
 )
-assert jnp.allclose(bn.running_var[...], expected_var, atol=1e-4), (
-    f'{bn.running_var[...]} vs {expected_var}'
+assert jnp.allclose(rv, 0.9 * rv0 + 0.1 * bv, atol=1e-5), (
+    f'running_var should use the BIASED batch variance, got {rv}'
 )
 
-# After many passes the running stats should approach the true batch stats.
+# Repeated steps must converge toward the batch statistics.
+rm_i, rv_i = jnp.zeros(4), jnp.ones(4)
 for _ in range(200):
-    bn(x, use_running_average=False)
-assert jnp.allclose(bn.running_mean[...], batch_mean, atol=1e-2), 'EMA did not converge'
-assert jnp.allclose(bn.running_var[...], batch_var, atol=1e-2), 'EMA did not converge'
+    _, rm_i, rv_i = {fn}(x, jnp.ones(4), jnp.zeros(4), rm_i, rv_i, training=True)
+assert jnp.allclose(rm_i, bm, atol=1e-3), 'EMA did not converge to the batch mean'
 """,
         },
         {
-            "name": "Eval mode uses running stats and updates nothing",
+            "name": "Eval mode uses the buffers and updates nothing",
             "code": """
 import jax
 import jax.numpy as jnp
 
-bn = {fn}(4)
-x = jax.random.normal(jax.random.key(2), (16, 4)) * 3.0 + 1.0
+x = jax.random.normal(jax.random.key(2), (16, 4)) * 5.0 + 7.0
+rm = jnp.full((4,), 1.0)
+rv = jnp.full((4,), 4.0)
 
-before_mean = bn.running_mean[...].copy()
-before_var = bn.running_var[...].copy()
+out, rm2, rv2 = {fn}(x, jnp.ones(4), jnp.zeros(4), rm, rv, training=False)
 
-out = bn(x, use_running_average=True)
-
-assert jnp.allclose(bn.running_mean[...], before_mean), (
-    'running_mean changed in eval mode — buffers must only update during training'
+assert jnp.allclose(rm2, rm) and jnp.allclose(rv2, rv), (
+    'Buffers must not change in eval mode'
 )
-assert jnp.allclose(bn.running_var[...], before_var), 'running_var changed in eval mode'
-
-# With the initial buffers (mean 0, var 1) eval mode is nearly a no-op.
-assert jnp.allclose(out, x, atol=1e-3), (
-    'With running_mean=0 and running_var=1, eval output should be ~x'
+expected = (x - rm) / jnp.sqrt(rv + 1e-5)
+assert jnp.allclose(out, expected, atol=1e-4), (
+    'Eval mode must normalise with the running buffers, not the batch statistics'
 )
-
-# It must NOT normalise the incoming batch.
 assert not jnp.allclose(jnp.mean(out, axis=0), 0.0, atol=1e-2), (
-    'Eval-mode output was batch-normalised — it should use the running stats'
+    'Eval output has ~zero column means, so it used the batch statistics — '
+    'that is the train-mode path'
 )
 """,
         },
         {
-            "name": "Eval mode is independent of batch composition",
+            "name": "gamma and beta are applied",
             "code": """
 import jax
 import jax.numpy as jnp
 
-bn = {fn}(4)
-train_x = jax.random.normal(jax.random.key(3), (64, 4)) * 2.0 + 1.0
-for _ in range(50):
-    bn(train_x, use_running_average=False)
+x = jax.random.normal(jax.random.key(3), (16, 4))
+base, _, _ = {fn}(x, jnp.ones(4), jnp.zeros(4), jnp.zeros(4), jnp.ones(4), training=True)
 
-sample = train_x[:1]
-alone = bn(sample, use_running_average=True)
-in_batch = bn(train_x, use_running_average=True)[:1]
-
-assert jnp.allclose(alone, in_batch, atol=1e-5), (
-    'Eval output for one sample changed depending on what it was batched with — '
-    'eval mode must not look at the batch'
-)
-assert jnp.isfinite(alone).all(), 'Batch size 1 must work in eval mode'
+g = jnp.arange(1.0, 5.0)
+b = jnp.full((4,), -2.0)
+out, _, _ = {fn}(x, g, b, jnp.zeros(4), jnp.ones(4), training=True)
+assert jnp.allclose(out, base * g + b, atol=1e-4), 'gamma must scale and beta must shift'
 """,
         },
         {
-            "name": "4-D (N, H, W, C) input",
+            "name": "Buffers are returned, not mutated",
             "code": """
 import jax
 import jax.numpy as jnp
 
-bn = {fn}(3)
-x = jax.random.normal(jax.random.key(4), (8, 5, 5, 3)) * 2.0 + 1.0
-out = bn(x, use_running_average=False)
+x = jax.random.normal(jax.random.key(4), (16, 4))
+rm = jnp.zeros(4)
+rv = jnp.ones(4)
+rm_before = rm.copy()
+rv_before = rv.copy()
 
-assert out.shape == (8, 5, 5, 3), f'{out.shape}'
-# Statistics are per-channel, reduced over N, H and W.
-assert jnp.allclose(jnp.mean(out, axis=(0, 1, 2)), 0.0, atol=1e-4), (
-    'Per-channel mean should be ~0 — reduce over every axis except the last'
+out, rm_new, rv_new = {fn}(x, jnp.ones(4), jnp.zeros(4), rm, rv, training=True)
+
+assert jnp.allclose(rm, rm_before) and jnp.allclose(rv, rv_before), (
+    'The arrays passed in must be untouched — JAX arrays are immutable'
 )
-assert jnp.allclose(jnp.std(out, axis=(0, 1, 2)), 1.0, atol=1e-3), 'Per-channel std'
-assert bn.running_mean[...].shape == (3,), f'{bn.running_mean[...].shape} vs (3,)'
+assert not jnp.allclose(rm_new, rm_before), 'The returned running_mean should have moved'
 """,
         },
         {
-            "name": "Affine params and gradients",
+            "name": "Gradients and jit",
             "code": """
+import functools
 import jax
 import jax.numpy as jnp
-from flax import nnx
 
-bn = {fn}(4)
 x = jax.random.normal(jax.random.key(5), (16, 4))
+g, b = jnp.ones(4), jnp.zeros(4)
+rm, rv = jnp.zeros(4), jnp.ones(4)
 
-bn.scale[...] = jnp.full((4,), 2.0)
-bn.bias[...] = jnp.full((4,), 5.0)
-out = bn(x, use_running_average=False)
-assert jnp.allclose(jnp.mean(out, axis=0), 5.0, atol=1e-3), 'bias should shift the mean'
-assert jnp.allclose(jnp.std(out, axis=0), 2.0, atol=1e-2), 'scale should stretch the std'
+def loss(x_, g_, b_):
+    out, _, _ = {fn}(x_, g_, b_, rm, rv, training=True)
+    return jnp.sum(out ** 2)
 
-grads = nnx.grad(lambda m: jnp.sum(m(x) ** 2))(bn)
-leaves = jax.tree.leaves(grads)
-assert all(jnp.isfinite(l).all() for l in leaves), 'Non-finite gradients'
-assert len(leaves) == 2, (
-    f'nnx.grad should differentiate only the 2 Params, got {len(leaves)} leaves — '
-    'running stats must be BatchStat so they are excluded'
-)
+gx, gg, gb = jax.grad(loss, argnums=(0, 1, 2))(x, g, b)
+for name, gr in (("x", gx), ("gamma", gg), ("beta", gb)):
+    assert jnp.isfinite(gr).all(), f'Non-finite gradient w.r.t. {name}'
+assert float(jnp.abs(gg).sum()) > 0, 'No gradient reached gamma'
+
+jitted = jax.jit(functools.partial({fn}, training=True))
+o1, m1, v1 = jitted(x, g, b, rm, rv)
+o2, m2, v2 = {fn}(x, g, b, rm, rv, training=True)
+assert jnp.allclose(o1, o2, atol=1e-5), 'jit changes the output'
+assert jnp.allclose(m1, m2, atol=1e-6), 'jit changes the running_mean'
 """,
         },
     ],

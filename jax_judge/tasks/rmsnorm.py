@@ -1,217 +1,193 @@
-"""RMSNorm — LayerNorm minus the mean subtraction, as used by Llama."""
+"""RMSNorm as a pure function — no mean subtraction, no bias."""
 
 TASK = {
     "title": "Implement RMSNorm",
     "category": "Core Ops & Layers",
     "order": 6,
+    "number": "08",
     "difficulty": "Medium",
-    "function_name": "RMSNorm",
+    "function_name": "rms_norm",
     "hint": (
-        "Take your LayerNorm and delete two things: the mean subtraction and the "
-        "bias. What is left is one reduction — the mean of the SQUARES along the "
-        "last axis (keepdims=True), not the square of the mean — then divide x by "
-        "the square root of it and multiply by scale. eps goes under the same "
-        "square root, so an all-zero row does not divide by zero."
+        "RMS is the root of the MEAN of the squares — mean over the last axis "
+        "with keepdims, then sqrt. Do not subtract the mean and do not add a "
+        "bias; that is exactly what distinguishes RMSNorm from LayerNorm. Note "
+        "eps defaults to 1e-6 here, and it goes INSIDE the sqrt."
     ),
     "description": r"""
-Implement **RMSNorm** as an `nnx.Module`.
+Implement **RMSNorm**, the normalization used by LLaMA, Gemma and most modern LLMs.
 
-$$y = \frac{x}{\sqrt{\frac{1}{d}\sum_i x_i^2 + \epsilon}} \cdot \gamma$$
+$$y = \frac{x}{\sqrt{\frac{1}{D}\sum_i x_i^2 + \epsilon}} \odot w$$
+
+### Signature
+```python
+def rms_norm(x, weight, eps=1e-6):
+    ...
+```
 
 ### Rules
-- Subclass `nnx.Module`
-- Signature: `RMSNorm(dim, *, eps=1e-6, rngs=None)`
-- One parameter only: `self.scale`, initialised to ones
-- **No mean subtraction** and **no bias** — that is the whole point
-- Normalise over the last axis
+- Do **not** use `nnx.RMSNorm`
+- Normalise over the **last** axis
+- **No mean subtraction** and **no bias** term — this is the whole point
+- `eps` goes inside the sqrt, and defaults to `1e-6` (not `1e-5`)
 
-### Why drop the mean
-RMSNorm is LayerNorm with the re-centering removed. The finding of the 2019
-paper (Zhang & Sennrich) was that the *re-scaling* is what stabilises training;
-the *re-centering* contributes almost nothing to it. Dropping it removes one
-reduction, one broadcast subtraction, and one parameter tensor from a layer that
-runs twice per block — small individually, but it sits on the critical path of
-every token in every layer.
+### RMSNorm vs LayerNorm
+LayerNorm centres *and* scales: it subtracts $\mu$ and divides by $\sigma$.
+RMSNorm only scales, dividing by the root-mean-square. So it drops the mean
+subtraction and the $\beta$ shift, leaving one learnable vector instead of two.
 
-Llama, Mistral, Gemma, and T5 all use RMSNorm. GPT-2 and BERT use LayerNorm.
+That turns out to cost nothing in quality while removing two reductions from
+the critical path — and at LLM scale, normalization is bandwidth-bound, not
+FLOP-bound, so removing a pass over the data is a real win. This is why
+essentially every model after LLaMA switched.
 
-**When do the two coincide?** Exactly when the input already has zero mean —
-then $\text{RMS}(x) = \sigma(x)$ and the two agree, up to the bias RMSNorm does
-not have. This is the follow-up worth being ready for, and the tests below check
-it directly.
-
-### The half of it that is not in the formula
-In low-precision training, real implementations upcast to float32 for the
-reduction. bf16 carries only 8 mantissa bits, so summing $x_i^2$ over
-`d = 4096` loses the small terms to rounding once the running total is a few
-orders of magnitude above them; fp16 has the mantissa but not the range, and
-$\sum x_i^2$ overflows outright. Llama's reference RMSNorm therefore computes the
-mean-of-squares in float32 and casts back only at the end. Nothing here forces
-you to — these tests run in float32 throughout — but "what dtype does your norm
-reduce in?" is a completely fair follow-up.
+### The trap
+If your implementation still matches LayerNorm on zero-mean input, that proves
+nothing — the two agree exactly when $\mu = 0$. The distinguishing test is
+input with a large **non-zero mean**: LayerNorm centres it away, RMSNorm does
+not. The tests below use exactly that.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
-from flax import nnx
 
 
-class RMSNorm(nnx.Module):
-    """Root-mean-square normalization over the last axis."""
+def rms_norm(x, weight, eps=1e-6):
+    """Root-mean-square normalization over the last axis.
 
-    def __init__(self, dim: int, *, eps: float = 1e-6, rngs: nnx.Rngs = None):
-        pass  # Replace this
+    Args:
+        x:      (..., D) array
+        weight: (D,) learnable scale
+        eps:    stability term inside the sqrt
 
-    def __call__(self, x):
-        """(..., dim) -> (..., dim)"""
-        pass  # Replace this
+    Returns:
+        Array of the same shape as x.
+    """
+    pass  # Replace this
 ''',
     "solution": '''import jax
 import jax.numpy as jnp
-from flax import nnx
 
 
-class RMSNorm(nnx.Module):
-    def __init__(self, dim: int, *, eps: float = 1e-6, rngs: nnx.Rngs = None):
-        self.scale = nnx.Param(jnp.ones((dim,)))   # no bias term
-        self.eps = eps
-        self.dim = dim
-
-    def __call__(self, x):
-        # Mean of the squares — no mean subtraction anywhere.
-        ms = jnp.mean(jnp.square(x), axis=-1, keepdims=True)
-        return x / jnp.sqrt(ms + self.eps) * self.scale
+def rms_norm(x, weight, eps=1e-6):
+    # Root of the MEAN of the squares — no centring, so no mean subtraction.
+    rms = jnp.sqrt(jnp.mean(x ** 2, axis=-1, keepdims=True) + eps)
+    return x / rms * weight
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
-from flax import nnx
 
-rms = RMSNorm(8)
-x = jax.random.normal(jax.random.key(0), (2, 8)) * 3.0 + 10.0
+x = jax.random.normal(jax.random.key(0), (2, 8)) + 10.0   # note the big offset
+w = jnp.ones(8)
 
-out = rms(x)
-print("input  RMS per row:", jnp.sqrt(jnp.mean(x ** 2, -1)))
-print("output RMS per row:", jnp.sqrt(jnp.mean(out ** 2, -1)), "(~1)")
-print("output mean per row:", out.mean(-1), "(NOT ~0 — no re-centering)")
+out = rms_norm(x, w)
+print("input mean :", float(x.mean()), "(far from 0)")
+print("output mean:", float(out.mean()), "(still far from 0 — RMSNorm does NOT centre)")
+print("output RMS :", float(jnp.sqrt(jnp.mean(out ** 2, axis=-1)).mean()), "(~1)")
 ''',
     "tests": [
         {
-            "name": "Output has unit RMS",
+            "name": "Matches the reference formula",
             "code": """
 import jax
 import jax.numpy as jnp
 
-rn = {fn}(16)
-x = jax.random.normal(jax.random.key(0), (4, 16)) * 5.0
-out = rn(x)
+x = jax.random.normal(jax.random.key(0), (2, 8))
+weight = jnp.ones(8)
+out = {fn}(x, weight)
 
 assert out.shape == x.shape, f'Shape mismatch: {out.shape} vs {x.shape}'
+rms = jnp.sqrt(jnp.mean(x ** 2, axis=-1, keepdims=True) + 1e-6)
+ref = x / rms * weight
+assert jnp.allclose(out, ref, atol=1e-5), 'Value mismatch vs the reference formula'
+""",
+        },
+        {
+            "name": "Output RMS is 1",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+x = jax.random.normal(jax.random.key(1), (4, 32)) * 9.0
+out = {fn}(x, jnp.ones(32))
+
 rms = jnp.sqrt(jnp.mean(out ** 2, axis=-1))
-assert jnp.allclose(rms, 1.0, atol=1e-3), f'Row RMS should be ~1, got {rms}'
+assert jnp.allclose(rms, 1.0, atol=1e-3), f'Per-row RMS should be ~1, got {rms}'
 """,
         },
         {
-            "name": "Exact formula",
+            "name": "Does NOT centre the input",
             "code": """
 import jax
 import jax.numpy as jnp
 
-rn = {fn}(4, eps=1e-6)
-x = jnp.array([[3.0, 4.0, 0.0, 0.0]])
+# Large non-zero mean: this is where RMSNorm and LayerNorm visibly differ.
+x = jax.random.normal(jax.random.key(2), (4, 16)) + 20.0
+out = {fn}(x, jnp.ones(16))
 
-# mean of squares = (9 + 16) / 4 = 6.25, rms = 2.5
-out = rn(x)
-expected = x / jnp.sqrt(6.25 + 1e-6)
-assert jnp.allclose(out, expected, atol=1e-5), f'{out} vs {expected}'
-assert jnp.allclose(out[0, 0], 1.2, atol=1e-4), f'3/2.5 = 1.2, got {out[0, 0]}'
-""",
-        },
-        {
-            "name": "No mean subtraction, no bias",
-            "code": """
-import jax.numpy as jnp
-from flax import nnx
-
-rn = {fn}(4)
-assert not hasattr(rn, "bias") or rn.bias is None, (
-    'RMSNorm has no bias parameter — that is part of what distinguishes it '
-    'from LayerNorm'
+assert not jnp.allclose(jnp.mean(out, axis=-1), 0.0, atol=1e-2), (
+    'Output rows have ~zero mean, so the mean was subtracted — that is LayerNorm. '
+    'RMSNorm divides by the RMS and leaves the mean alone.'
 )
-assert isinstance(rn.scale, nnx.Param), f'scale must be nnx.Param, got {type(rn.scale)}'
-assert jnp.allclose(rn.scale[...], 1.0), 'scale must be initialised to ones'
 
-# An all-positive input keeps a positive mean: re-centering would zero it.
-x = jnp.array([[1.0, 2.0, 3.0, 4.0]])
-out = rn(x)
-assert float(jnp.mean(out)) > 0.5, (
-    f'Output mean is {float(jnp.mean(out))}, close to 0 — you are subtracting the '
-    'mean. RMSNorm must not re-center.'
-)
-assert (out > 0).all(), 'All-positive input must stay all-positive'
-""",
-        },
-        {
-            "name": "Scale parameter is applied",
-            "code": """
-import jax
-import jax.numpy as jnp
-
-rn = {fn}(4)
-x = jax.random.normal(jax.random.key(1), (3, 4))
-
-base = rn(x)
-rn.scale[...] = jnp.full((4,), 3.0)
-scaled = rn(x)
-
-assert jnp.allclose(scaled, base * 3.0, atol=1e-4), 'scale is not being applied'
-
-rn.scale[...] = jnp.array([1.0, 2.0, 3.0, 4.0])
-per_channel = rn(x)
-assert jnp.allclose(per_channel, base * jnp.array([1.0, 2.0, 3.0, 4.0]), atol=1e-4), (
-    'scale must broadcast per feature'
-)
-""",
-        },
-        {
-            "name": "Matches LayerNorm on zero-mean input",
-            "code": """
-import jax
-import jax.numpy as jnp
-
-rn = {fn}(8, eps=1e-6)
-x = jax.random.normal(jax.random.key(2), (4, 8))
-x = x - jnp.mean(x, axis=-1, keepdims=True)      # force zero mean
-
-out = rn(x)
 mu = jnp.mean(x, axis=-1, keepdims=True)
-var = jnp.var(x, axis=-1, keepdims=True)
-ln_equivalent = (x - mu) / jnp.sqrt(var + 1e-6)
+ln = (x - mu) / jnp.sqrt(jnp.var(x, axis=-1, keepdims=True) + 1e-6)
+assert not jnp.allclose(out, ln, atol=1e-2), 'Output matches LayerNorm, not RMSNorm'
+""",
+        },
+        {
+            "name": "weight scales per feature",
+            "code": """
+import jax
+import jax.numpy as jnp
 
-assert jnp.allclose(out, ln_equivalent, atol=1e-3), (
-    'On zero-mean input RMSNorm and LayerNorm must agree'
+x = jax.random.normal(jax.random.key(3), (4, 8))
+base = {fn}(x, jnp.ones(8))
+
+w = jnp.arange(1.0, 9.0)
+assert jnp.allclose({fn}(x, w), base * w, atol=1e-5), (
+    'weight must multiply element-wise along the last axis'
+)
+
+# No bias: scaling the weight by 0 must give exactly 0.
+assert jnp.allclose({fn}(x, jnp.zeros(8)), 0.0, atol=1e-6), (
+    'With weight=0 the output must be exactly 0 — a nonzero result means you '
+    'added a bias term, which RMSNorm does not have'
 )
 """,
         },
         {
-            "name": "Stability, 3-D input, and gradients",
+            "name": "eps is used and sits inside the sqrt",
             "code": """
 import jax
 import jax.numpy as jnp
-from flax import nnx
 
-rn = {fn}(4, eps=1e-6)
-zeros = rn(jnp.zeros((1, 4)))
-assert jnp.isfinite(zeros).all(), f'All-zero input gave {zeros} — eps must guard the sqrt'
+x = jnp.zeros((1, 4))
+out = {fn}(x, jnp.ones(4), eps=1e-6)
+assert jnp.isfinite(out).all(), 'All-zero input produced non-finite output — eps must guard the sqrt'
+assert jnp.allclose(out, 0.0), f'All-zero input should give 0, got {out}'
 
-rn3 = {fn}(6)
-x = jax.random.normal(jax.random.key(3), (2, 5, 6))
-o = rn3(x)
-assert o.shape == (2, 5, 6), f'{o.shape}'
-assert jnp.allclose(jnp.sqrt(jnp.mean(o ** 2, -1)), 1.0, atol=1e-3), '3-D RMS'
+# A big eps must visibly shrink the output.
+x2 = jax.random.normal(jax.random.key(4), (2, 8))
+small = {fn}(x2, jnp.ones(8), eps=1e-6)
+large = {fn}(x2, jnp.ones(8), eps=100.0)
+assert jnp.abs(large).max() < jnp.abs(small).max(), 'eps does not appear to be used'
+""",
+        },
+        {
+            "name": "Gradients, jit and vmap",
+            "code": """
+import jax
+import jax.numpy as jnp
 
-grads = nnx.grad(lambda m: jnp.sum(m(x) ** 2))(rn3)
-leaves = jax.tree.leaves(grads)
-assert len(leaves) >= 1, 'No gradient for scale'
-assert all(jnp.isfinite(l).all() for l in leaves), 'Non-finite gradients'
+x = jax.random.normal(jax.random.key(5), (4, 8))
+w = jnp.ones(8)
+
+gx, gw = jax.grad(lambda a, b: jnp.sum({fn}(a, b) ** 2), argnums=(0, 1))(x, w)
+assert jnp.isfinite(gx).all() and jnp.isfinite(gw).all(), 'Non-finite gradient'
+assert float(jnp.abs(gw).sum()) > 0, 'No gradient reached weight'
+
+ref = {fn}(x, w)
+assert jnp.allclose(jax.jit({fn})(x, w), ref, atol=1e-5), 'jit changes the result'
+assert jnp.allclose(jax.vmap(lambda r: {fn}(r, w))(x), ref, atol=1e-5), 'vmap changes the result'
 """,
         },
     ],
