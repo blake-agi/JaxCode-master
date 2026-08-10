@@ -37,10 +37,19 @@ X shape (3, 2), Y shape (5, 2)  ->  output shape (3, 5)
 ```
 
 ### Why it matters
-The expand-dims version materializes an `(N, M, D)` intermediate. `vmap` expresses
-the same computation without you hand-managing axes, and it composes with `grad`
-and `jit`. Being fluent with `in_axes=(None, 0)` vs `(0, None)` is a very common
-JAX screening question.
+Not for speed — under `jit` XLA fuses both spellings into the same kernel, and
+neither actually materializes the `(N, M, D)` intermediate. (You can check:
+`jax.jit(f).lower(X, Y).compile().memory_analysis()` reports the same temp
+buffers for both.)
+
+The win is that you never hand-manage axes. The `vmap` version is written for
+one pair of vectors and stays readable when the batching gets harder — add a
+head axis, a device axis, a per-example gradient — where the expand-dims
+version turns into a pile of `None` indices you have to re-derive every time.
+And it composes: `vmap(grad(f))` gives per-example gradients for free.
+
+Being fluent with `in_axes=(None, 0)` vs `(0, None)` is a very common JAX
+screening question.
 """,
     "stub": '''def pairwise_sq_dist(X, Y):
     """Squared Euclidean distances between every row of X and every row of Y.

@@ -40,8 +40,9 @@ $$\theta_{t+1} = \theta_t - \eta \nabla_\theta \mathcal{L}(\theta_t, \text{batch
   in the literature plots. `value_and_grad` gives you the value at the point
   where the gradient was taken, which is what you want.
 - **Assuming a flat array.** `params - lr * grads` is fine for the toy case and
-  dies with `TypeError: unsupported operand type(s) for -: 'dict' and 'float'`
-  the moment `params` is a real parameter tree.
+  dies with `TypeError: unsupported operand type(s) for *: 'float' and 'dict'`
+  the moment `params` is a real parameter tree — the multiplication fails
+  before the subtraction is even reached.
 - **Reaching for in-place updates.** JAX arrays are immutable; there is no
   `p -= lr * g`. The step *returns* new parameters, which is why JAX training
   loops thread state through explicitly instead of hiding it inside a mutable

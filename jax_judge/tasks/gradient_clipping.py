@@ -40,11 +40,16 @@ updates and therefore points you somewhere else entirely. Global-norm is what
 every large-model training script uses, usually at `max_norm=1.0`.
 
 ### What it is actually for
-Clipping is a guard against rare loss spikes, not a routine regulariser. A
-single bad batch — a long sequence, a degenerate example — can produce a
-gradient orders of magnitude larger than usual, and one such step is enough to
-knock a large model into a region it never recovers from. Clipping bounds the
-damage of that one step while leaving the other 99.9% of updates untouched.
+Clipping is a guard against loss spikes. A single bad batch — a long sequence,
+a degenerate example — can produce a gradient orders of magnitude larger than
+usual, and one such step is enough to knock a large model into a region it
+never recovers from. Clipping bounds the damage of that step.
+
+How often it actually fires depends on the run: with `max_norm=1.0` it is
+common for a large fraction of early pretraining steps to be clipped, tailing
+off as training settles. So treat it as an always-on safety rail whose binding
+rate you should watch — a clip rate near 100% late in training usually means
+the threshold is too low, not that the model is unstable.
 
 ### ⚠️ JAX-forced signature change
 PyTorch takes an iterable of parameters, reads `p.grad`, and mutates it via

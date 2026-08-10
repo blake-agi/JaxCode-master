@@ -39,9 +39,16 @@ def init_ensemble(key, n_models, shape):  # -> (n_models, *shape)
 # WRONG — every model gets identical weights
 [jax.random.normal(key, shape) for _ in range(n)]
 
-# WRONG — subtle: reuses `key` after splitting from it
+# WRONG — subtle: `key` is used for a draw AND carried on to the next split,
+# so the two draws below are correlated
 key, sub = jax.random.split(key)
-a = jax.random.normal(key, shape)
+a = jax.random.normal(key, shape)     # consumed `key` here...
+key, sub = jax.random.split(key)      # ...and split the same `key` again
+b = jax.random.normal(key, shape)
+
+# RIGHT — the carry key is only ever split; draws use the subkey
+key, sub = jax.random.split(key)
+a = jax.random.normal(sub, shape)
 ```
 
 ### Why it matters

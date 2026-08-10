@@ -41,7 +41,7 @@ and a position-wise MLP $\;d \to 4d \to \mathrm{GELU} \to d$.
 - `nnx.Linear` and `nnx.LayerNorm` are allowed building blocks;
   `nnx.MultiHeadAttention` and `nnx.dot_product_attention` are **banned**
 - Attention must be genuinely multi-head: split `D` into `num_heads` heads of
-  size `d_head = D // num_heads` and scale scores by $1/\sqrt{d_h}$
+  size `d_head = D // num_heads` and scale scores by $1/\sqrt{d_{head}}$
 - Attention must be **causal**: position $i$ may attend to $j \le i$ only
 - MLP hidden width is exactly `4 * d_model`, activation GELU
 
