@@ -1,4 +1,4 @@
-"""Mixture of Experts — top-k routing and the load-balancing loss that saves it."""
+"""Mixture of Experts — top-k routing over a list of expert MLPs."""
 
 TASK = {
     "title": "Mixture of Experts (MoE)",
@@ -7,95 +7,65 @@ TASK = {
     "difficulty": "Hard",
     "function_name": "MixtureOfExperts",
     "hint": (
-        "Router logits are (N, E); take jax.lax.top_k(logits, k) and softmax "
-        "over ONLY the k selected logits, so the kept weights sum to 1. For the "
-        "dense-but-simple version, run every expert on every token to get "
-        "(E, N, dout) and gather the k you need — correctness first. The aux "
-        "loss is E * sum_e (fraction of tokens routed to e) * (mean router "
-        "probability for e), where the fraction uses the hard top-k assignment "
-        "and the probability uses the full softmax over all experts."
+        "self.router is one nnx.Linear(d_model, num_experts); self.experts is a "
+        "plain Python list of nnx.Sequential(Linear, relu, Linear). Flatten "
+        "(B, S, D) to (N, D) first so routing is per TOKEN. Take top_k over the "
+        "router logits, softmax ONLY those k values so the kept weights sum to 1, "
+        "then accumulate: for each expert, its weight per token is the sum of "
+        "the selected weights where that expert was chosen — jnp.where over "
+        "(top_idx == e) gives you that without any boolean indexing."
     ),
     "description": r"""
-Implement a **top-k mixture-of-experts** layer as an `nnx.Module`, returning
-both the output and the load-balancing auxiliary loss.
+Implement a **top-k Mixture of Experts** layer.
+
+A router scores every expert per token, the top $k$ win, and their outputs are
+combined with softmax weights over just those $k$ scores.
 
 ### Signature
 ```python
 class MixtureOfExperts(nnx.Module):
-    def __init__(self, d_model, d_hidden, num_experts, top_k=2, *, rngs):
-        ...
-    def __call__(self, x):
-        ...  # (B, T, d_model) -> (output, aux_loss)
+    def __init__(self, d_model, d_ff, num_experts, top_k=2, *, rngs: nnx.Rngs): ...
+    def __call__(self, x): ...
 ```
 
-Each expert is an independent 2-layer MLP `d_model -> d_hidden -> d_model` with
-a ReLU. The router is a single `(d_model, num_experts)` matrix.
+### Requirements
+- `self.router`: `nnx.Linear(d_model, num_experts)`
+- `self.experts`: an **`nnx.List`** of `num_experts` MLPs, each
+  `nnx.Sequential(nnx.Linear(d_model, d_ff), jax.nn.relu, nnx.Linear(d_ff, d_model))`
+  (`nnx.List` is Flax's `nn.ModuleList` — a bare Python list is rejected)
+- `self.top_k`
+- Accepts `(B, S, D)` or `(N, D)`, and returns the same shape
+- Routing is **per token**, not per sequence
+- Softmax over the top-k logits **only**
 
-### The routing
-1. `logits = x @ W_router` → `(N, E)` for `N = B*T` tokens
-2. `probs = softmax(logits)` over **all** experts — used by the aux loss
-3. Select the top-$k$ experts per token
-4. Renormalise **over the selected $k$ only**, so their weights sum to 1
-5. Output is the weighted sum of those $k$ experts' outputs
+### The point: parameters and FLOPs come apart
+A dense layer uses every parameter for every token. An MoE with $E$ experts
+holds $E\times$ the parameters but activates only $k$ of them per token, so
+capacity grows while per-token compute stays fixed. Mixtral-8x7B has ~47B
+parameters and the forward cost of a ~13B model, because $k=2$ of $8$ experts
+run per token.
 
-### The auxiliary loss
-$$\mathcal{L}_{\text{aux}} = E \sum_{e=1}^{E} f_e \cdot P_e,
-\qquad
-f_e = \frac{1}{N}\sum_{n=1}^{N} \mathbb{1}\!\left[e \in \mathrm{top}\text{-}k(n)\right],
-\qquad
-P_e = \frac{1}{N}\sum_{n=1}^{N} \mathrm{softmax}(\text{logits}_n)_e$$
+### Softmax over the top-k, not all E
+Softmax first and then truncate, and the kept weights no longer sum to 1 — the
+layer's output magnitude then depends on how confident the router happened to
+be, which destabilises training. Select first, softmax second.
 
-$f_e$ is the **fraction of tokens** routed to expert $e$ (hard, from top-$k$)
-and $P_e$ is the **mean router probability** for expert $e$ (soft, from the full
-softmax over all $E$).
+### Why real implementations need a load-balancing loss
+Routing is a winner-take-all feedback loop: an expert that is slightly better
+early gets more tokens, trains faster, and gets picked even more, until a few
+experts do everything and the rest are dead weight. Production MoEs add an
+auxiliary loss pushing the router toward uniform expert usage. This task leaves
+it out to stay close to the original — but "what stops the router collapsing?"
+is the follow-up question this problem exists to set up.
 
-Watch the normalisation, because it is a classic follow-up. Each token is
-counted once per selected expert, so $\sum_e f_e = k$ while $\sum_e P_e = 1$.
-That gives, for this (Switch/Mixtral) convention:
-
-| routing | $\mathcal{L}_{\text{aux}}$ |
-|---|---|
-| perfectly uniform ($f_e = k/E$, $P_e = 1/E$) | $E \cdot E \cdot \tfrac{k}{E}\cdot\tfrac{1}{E} = k$ |
-| total collapse (one expert takes everything) | $E$ |
-
-The famous "uniform gives exactly 1" is the $k = 1$ Switch Transformer case.
-DeepSeek-style implementations divide $f_e$ by $k$ so the uniform value is 1 for
-any $k$; this task uses the un-divided form, which is what
-`transformers`' Mixtral loss computes.
-
-### Rules
-- Renormalise over the selected experts only — this is the step people miss
-- Return `(output, aux_loss)`; output shape matches the input
-- The aux loss must be differentiable **through $P_e$** (the hard counts $f_e$
-  are not differentiable, and that is fine — the gradient flows via $P$)
-- Store the parameters under these names, since the tests read and overwrite
-  them: `self.w_router` `(d_model, num_experts)`, and the experts **stacked on a
-  leading expert axis** as `self.w1` `(num_experts, d_model, d_hidden)` and
-  `self.w2` `(num_experts, d_hidden, d_model)`. Also keep `self.top_k`.
-
-### Why the aux loss is not optional
-Routing is a positive feedback loop: an expert that is slightly better early
-gets more tokens, so it trains faster, so it gets picked more. Left alone this
-collapses — a handful of experts take nearly all traffic and the rest are dead
-weight, so you have paid for $E$ experts and are effectively running two.
-
-The $f_e \cdot P_e$ product is a neat piece of design. $f$ is what you actually
-care about but has no gradient (it comes from an argmax). $P$ is differentiable
-but does not directly measure load. Multiplying them gives a term whose gradient
-pushes down the router probability for experts that are *currently* overloaded,
-with the load entering as a constant multiplier.
-
-### Parameters vs FLOPs — the whole point
-An MoE layer holds $E$ experts' worth of parameters but activates only $k$ per
-token. With $E=64, k=2$ you get 32x the parameters at ~2 experts' compute.
-Since capability scales with parameter count while cost scales with *active*
-parameters, MoE buys capacity for cheap.
-
-What it costs is memory and communication: all $E$ experts must be resident even
-though most are idle for any given token, and at scale the experts are sharded
-across devices so routing becomes an all-to-all — which is why real
-implementations obsess over expert *capacity* and token dropping, and why the
-naive dense-compute version below is correct but not fast.
+### ⚠️ Why the JAX version has no boolean-mask scatter
+The PyTorch original writes `output[mask] += ...` with a boolean mask. JAX has
+no in-place scatter and cannot handle a data-dependent output shape under
+`jit`, so instead every expert runs on every token and its contribution is
+multiplied by a per-token weight that is **zero** where the expert was not
+selected. Same result; it is dense rather than sparse, which is fine at this
+scale and is exactly why real sparse MoE needs custom kernels to actually
+realise the FLOP saving.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -103,17 +73,14 @@ from flax import nnx
 
 
 class MixtureOfExperts(nnx.Module):
-    """Top-k mixture of experts. Returns (output, aux_loss)."""
+    """Top-k routed mixture of expert MLPs."""
 
-    def __init__(self, d_model: int, d_hidden: int, num_experts: int,
+    def __init__(self, d_model: int, d_ff: int, num_experts: int,
                  top_k: int = 2, *, rngs: nnx.Rngs):
-        # Expected attributes: self.top_k, self.w_router (d_model, num_experts),
-        # self.w1 (num_experts, d_model, d_hidden), self.w2 (num_experts,
-        # d_hidden, d_model).
         pass  # Replace this
 
     def __call__(self, x):
-        """(B, T, d_model) -> ((B, T, d_model), scalar aux_loss)"""
+        """(B, S, d_model) or (N, d_model) -> same shape"""
         pass  # Replace this
 ''',
     "solution": '''import jax
@@ -122,296 +89,221 @@ from flax import nnx
 
 
 class MixtureOfExperts(nnx.Module):
-    """Top-k mixture of experts. Returns (output, aux_loss)."""
-
-    def __init__(self, d_model: int, d_hidden: int, num_experts: int,
+    def __init__(self, d_model: int, d_ff: int, num_experts: int,
                  top_k: int = 2, *, rngs: nnx.Rngs):
-        self.d_model = d_model
-        self.num_experts = num_experts
         self.top_k = top_k
-
-        key = rngs.params()
-        k_router, k_w1, k_w2 = jax.random.split(key, 3)
-
-        self.w_router = nnx.Param(
-            jax.random.normal(k_router, (d_model, num_experts)) / jnp.sqrt(d_model)
-        )
-        # Experts stacked on a leading axis so they can be applied in one einsum.
-        self.w1 = nnx.Param(
-            jax.random.normal(k_w1, (num_experts, d_model, d_hidden)) / jnp.sqrt(d_model)
-        )
-        self.w2 = nnx.Param(
-            jax.random.normal(k_w2, (num_experts, d_hidden, d_model)) / jnp.sqrt(d_hidden)
-        )
+        self.router = nnx.Linear(d_model, num_experts, rngs=rngs)
+        # nnx.List is the counterpart of torch's nn.ModuleList: a plain Python
+        # list of submodules is rejected as a static attribute holding data.
+        self.experts = nnx.List([
+            nnx.Sequential(
+                nnx.Linear(d_model, d_ff, rngs=rngs),
+                jax.nn.relu,
+                nnx.Linear(d_ff, d_model, rngs=rngs),
+            )
+            for _ in range(num_experts)
+        ])
 
     def __call__(self, x):
-        B, T, D = x.shape
-        E, k = self.num_experts, self.top_k
-        flat = x.reshape(-1, D)                             # (N, D)
-        N = flat.shape[0]
+        orig_shape = x.shape
+        x_flat = x.reshape(-1, orig_shape[-1])      # route per TOKEN
 
-        logits = flat @ self.w_router[...]                 # (N, E)
-        probs = jax.nn.softmax(logits, axis=-1)             # full soft routing
+        logits = self.router(x_flat)                        # (N, E)
+        top_vals, top_idx = jax.lax.top_k(logits, self.top_k)
+        # Softmax over the SELECTED logits only, so the kept weights sum to 1.
+        weights = jax.nn.softmax(top_vals, axis=-1)         # (N, k)
 
-        top_vals, top_idx = jax.lax.top_k(logits, k)        # (N, k)
-        # Renormalise over the SELECTED experts only, so their weights sum to 1.
-        top_w = jax.nn.softmax(top_vals, axis=-1)
+        out = jnp.zeros_like(x_flat)
+        for e, expert in enumerate(self.experts):
+            # This expert's weight per token: the selected weight where it was
+            # chosen, 0 otherwise. Replaces PyTorch's boolean-mask scatter,
+            # which JAX cannot express with a data-dependent shape.
+            w = jnp.sum(jnp.where(top_idx == e, weights, 0.0), axis=-1)  # (N,)
+            out = out + w[:, None] * expert(x_flat)
 
-        # Dense compute: every expert on every token, then gather. Correct and
-        # simple; a production kernel would dispatch instead.
-        h = jax.nn.relu(jnp.einsum("nd,edh->enh", flat, self.w1[...]))
-        all_out = jnp.einsum("enh,ehd->ned", h, self.w2[...])   # (N, E, D)
-
-        # picked[n, j] = all_out[n, top_idx[n, j]]
-        picked = jnp.take_along_axis(all_out, top_idx[:, :, None], axis=1)
-
-        out = jnp.sum(picked * top_w[:, :, None], axis=1)    # (N, D)
-
-        # Load balancing: hard fraction f_e times mean soft probability P_e.
-        one_hot = jax.nn.one_hot(top_idx, E).sum(axis=1)     # (N, E) counts
-        f = jnp.mean(one_hot, axis=0)                        # tokens per expert
-        P = jnp.mean(probs, axis=0)                          # mean router prob
-        aux_loss = E * jnp.sum(f * P)
-
-        return out.reshape(B, T, D), aux_loss
+        return out.reshape(orig_shape)
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
 from flax import nnx
 
-layer = MixtureOfExperts(d_model=32, d_hidden=64, num_experts=8, top_k=2, rngs=nnx.Rngs(0))
-x = jax.random.normal(jax.random.key(1), (2, 16, 32))
+moe = MixtureOfExperts(d_model=16, d_ff=32, num_experts=4, top_k=2,
+                       rngs=nnx.Rngs(params=0))
+x = jax.random.normal(jax.random.key(1), (2, 5, 16))
+print("out:", moe(x).shape)
 
-out, aux = layer(x)
-print("out:", out.shape, " aux_loss:", float(aux))
-print(f"(perfectly uniform routing -> top_k = {layer.top_k}; "
-      f"total collapse -> num_experts = {layer.num_experts})")
-
-# How many parameters are there vs how many run per token?
-p = nnx.state(layer, nnx.Param)
-total = sum(v.size for v in jax.tree.leaves(p))
-per_token = 32 * 64 * 2 * 2      # top_k experts, two matrices each
-print(f"total expert params: {total}, active per token: ~{per_token}")
+logits = moe.router(x.reshape(-1, 16))
+_, idx = jax.lax.top_k(logits, 2)
+counts = jnp.bincount(idx.ravel(), length=4)
+print("tokens routed to each expert:", counts, "(uneven — hence the aux loss)")
 ''',
     "tests": [
         {
-            "name": "Shapes and return signature",
+            "name": "Structure: router and expert list",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-layer = {fn}(d_model=16, d_hidden=32, num_experts=4, top_k=2, rngs=nnx.Rngs(0))
-x = jax.random.normal(jax.random.key(1), (2, 8, 16))
+m = {fn}(16, 32, 4, top_k=2, rngs=nnx.Rngs(params=0))
 
-result = layer(x)
-assert isinstance(result, tuple) and len(result) == 2, (
-    f'__call__ must return (output, aux_loss), got {type(result).__name__}'
+assert isinstance(m.router, nnx.Linear), (
+    f'self.router must be an nnx.Linear, got {type(m.router)}'
 )
-out, aux = result
-assert out.shape == (2, 8, 16), f'Output shape {out.shape} vs (2, 8, 16)'
-assert jnp.ndim(aux) == 0, f'aux_loss must be a scalar, got shape {jnp.shape(aux)}'
-assert jnp.isfinite(out).all(), 'Non-finite output'
-assert jnp.isfinite(aux), 'Non-finite aux loss'
+assert m.router.kernel.shape == (16, 4), (
+    f'router should map d_model -> num_experts = (16, 4), got {m.router.kernel.shape}'
+)
+assert len(m.experts) == 4, f'expected 4 experts, got {len(m.experts)}'
+assert m.top_k == 2, f'top_k {m.top_k}'
+
+x = jax.random.normal(jax.random.key(1), (2, 5, 16))
+assert m(x).shape == (2, 5, 16), f'{m(x).shape}'
+assert m(x.reshape(-1, 16)).shape == (10, 16), 'must also accept (N, D)'
 """,
         },
         {
-            "name": "Routing weights sum to 1 over the selected experts",
+            "name": "Matches the reference routing",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-# One expert per token (top_k = 1) with all experts made identical: the output
-# must then equal that single expert's output exactly, with weight 1.0.
-layer = {fn}(d_model=8, d_hidden=16, num_experts=4, top_k=1, rngs=nnx.Rngs(0))
+m = {fn}(8, 16, 4, top_k=2, rngs=nnx.Rngs(params=2))
+x = jax.random.normal(jax.random.key(3), (6, 8))
 
-w1 = layer.w1[...] if hasattr(layer, 'w1') else None
-assert w1 is not None, 'Expected stacked expert weights on self.w1'
+logits = m.router(x)
+top_vals, top_idx = jax.lax.top_k(logits, 2)
+w = jax.nn.softmax(top_vals, axis=-1)
+ref = jnp.zeros_like(x)
+for e, ex in enumerate(m.experts):
+    we = jnp.sum(jnp.where(top_idx == e, w, 0.0), axis=-1)
+    ref = ref + we[:, None] * ex(x)
 
-# Force every expert to be the same function.
-layer.w1[...] = jnp.tile(layer.w1[...][:1], (4, 1, 1))
-layer.w2[...] = jnp.tile(layer.w2[...][:1], (4, 1, 1))
-
-x = jax.random.normal(jax.random.key(2), (1, 6, 8))
-out, _ = layer(x)
-
-flat = x.reshape(-1, 8)
-expected = jax.nn.relu(flat @ layer.w1[...][0]) @ layer.w2[...][0]
-assert jnp.allclose(out.reshape(-1, 8), expected, atol=1e-4), (
-    f'With identical experts and top_k=1 the weight must be exactly 1.0. '
-    f'Max diff {float(jnp.abs(out.reshape(-1, 8) - expected).max()):.2e} — this '
-    'fails if the weights are not renormalised over the selected experts.'
-)
+assert jnp.allclose(m(x), ref, atol=1e-5), 'Output does not match top-k routed mixture'
 """,
         },
         {
-            "name": "Renormalised over top-k, not over all experts",
+            "name": "Softmax is over the top-k only",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-# All experts identical again, but now top_k = 2. If the weights are
-# renormalised over the selected 2 they sum to 1 and the output equals one
-# expert's output. If softmax over ALL 8 is used instead, the two kept weights
-# sum to well under 1 and the output is scaled down.
-E, k = 8, 2
-layer = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=k, rngs=nnx.Rngs(0))
-layer.w1[...] = jnp.tile(layer.w1[...][:1], (E, 1, 1))
-layer.w2[...] = jnp.tile(layer.w2[...][:1], (E, 1, 1))
+m = {fn}(4, 8, 4, top_k=2, rngs=nnx.Rngs(params=4))
+# Close logits, so the discarded mass is large: softmax over all four leaves
+# the top-2 summing to only ~0.55, while softmax over the top-2 sums to 1.
+m.router.kernel[...] = jnp.zeros((4, 4))
+m.router.bias[...] = jnp.array([1.0, 0.9, 0.8, 0.7])
 
-x = jax.random.normal(jax.random.key(3), (1, 5, 8))
-out, _ = layer(x)
+x = jax.random.normal(jax.random.key(5), (3, 4))
+w_full = jax.nn.softmax(jnp.array([1.0, 0.9, 0.8, 0.7]))
+w_topk = jax.nn.softmax(jnp.array([1.0, 0.9]))
+assert abs(float(w_topk.sum()) - 1.0) < 1e-6
+assert float(w_full[:2].sum()) < 0.6, 'setup: discarded mass should be large'
 
-flat = x.reshape(-1, 8)
-expected = jax.nn.relu(flat @ layer.w1[...][0]) @ layer.w2[...][0]
+ref_topk = w_topk[0] * m.experts[0](x) + w_topk[1] * m.experts[1](x)
+ref_full = w_full[0] * m.experts[0](x) + w_full[1] * m.experts[1](x)
 
-assert jnp.allclose(out.reshape(-1, 8), expected, atol=1e-4), (
-    f'Expected the kept weights to sum to 1 (giving one expert back exactly). '
-    f'Got a max deviation of {float(jnp.abs(out.reshape(-1, 8) - expected).max()):.4f}. '
-    'Softmax must be taken over the top-k logits only, after selection.'
+assert jnp.allclose(m(x), ref_topk, atol=1e-5), (
+    'Weights must be softmax over the SELECTED logits so they sum to 1. '
+    'Softmaxing all E and then truncating gives the (wrong) other answer.'
 )
+assert not jnp.allclose(ref_topk, ref_full, atol=1e-4), 'test is not discriminating'
 """,
         },
         {
-            "name": "Only top_k experts contribute",
+            "name": "Only the top-k experts contribute",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-E, k = 6, 2
-layer = {fn}(d_model=8, d_hidden=12, num_experts=E, top_k=k, rngs=nnx.Rngs(0))
-x = jax.random.normal(jax.random.key(4), (1, 4, 8))
+m = {fn}(4, 8, 4, top_k=1, rngs=nnx.Rngs(params=6))
+m.router.kernel[...] = jnp.zeros((4, 4))
+m.router.bias[...] = jnp.array([5.0, 0.0, 0.0, 0.0])   # expert 0 always wins
 
-out_before, _ = layer(x)
-
-# Find which experts the router picks, then corrupt an expert it did NOT pick.
-logits = x.reshape(-1, 8) @ layer.w_router[...]
-_, idx = jax.lax.top_k(logits, k)
-used = set(int(i) for i in idx.reshape(-1))
-unused = [e for e in range(E) if e not in used]
-assert unused, 'test setup: expected at least one unused expert'
-
-victim = unused[0]
-layer.w2[...] = layer.w2[...].at[victim].set(layer.w2[...][victim] + 100.0)
-out_after, _ = layer(x)
-
-assert jnp.allclose(out_before, out_after, atol=1e-4), (
-    f'Perturbing expert {victim}, which no token routed to, changed the output. '
-    'Only the top-k experts may contribute.'
+x = jax.random.normal(jax.random.key(7), (3, 4))
+assert jnp.allclose(m(x), m.experts[0](x), atol=1e-5), (
+    'With top_k=1 and expert 0 always selected, the output must be exactly '
+    'expert 0 (its softmax weight over one logit is 1.0)'
 )
 
-# And perturbing a USED expert must change it.
-target = list(used)[0]
-layer.w2[...] = layer.w2[...].at[target].set(layer.w2[...][target] + 100.0)
-out_used, _ = layer(x)
-assert not jnp.allclose(out_before, out_used, atol=1e-3), (
-    f'Perturbing expert {target}, which IS selected, left the output unchanged'
+# Perturbing an unused expert must change nothing.
+before = m(x)
+m.experts[2].layers[0].kernel[...] += 100.0
+assert jnp.allclose(m(x), before, atol=1e-5), (
+    'Changing an unselected expert altered the output — non-top-k experts must '
+    'receive weight exactly 0'
 )
 """,
         },
         {
-            "name": "Aux loss hits its floor of top_k when the router is uniform",
+            "name": "Routing is per token, not per sequence",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-# A zero router makes every logit 0, so P_e = 1/E exactly. The hard counts then
-# drop out of the sum: aux = E * sum_e f_e * (1/E) = sum_e f_e = k, because each
-# token is counted once for each of its k selected experts. Same answer for any
-# top_k, which pins BOTH the E multiplier and the sum_e f_e = k normalisation.
-for E, k in ((4, 1), (4, 2), (8, 4)):
-    layer = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=k, rngs=nnx.Rngs(0))
-    layer.w_router[...] = jnp.zeros_like(layer.w_router[...])
-    x = jax.random.normal(jax.random.key(5), (4, 32, 8))
-    _, aux = layer(x)
+m = {fn}(8, 16, 4, top_k=2, rngs=nnx.Rngs(params=8))
+x = jax.random.normal(jax.random.key(9), (1, 6, 8))
 
-    assert jnp.allclose(aux, float(k), atol=1e-4), (
-        f'E={E}, top_k={k}: with a uniform router P_e = 1/E and sum_e f_e = k, so '
-        f'aux = E * sum_e f_e * (1/E) = k = {k}. Got {float(aux)}. If you got '
-        f'{k / E:.3f} you dropped the leading E; if you got 1.0 you normalised '
-        'f_e by k, which is a different (DeepSeek-style) convention.'
-    )
-    assert aux > 0, 'Aux loss must be positive'
+# A (B, S, D) call must equal flattening to (B*S, D) and back.
+flat = m(x.reshape(-1, 8)).reshape(1, 6, 8)
+assert jnp.allclose(m(x), flat, atol=1e-5), (
+    'Reshape to (N, D) before routing — the shape must not change the result'
+)
+
+# Different tokens can select different experts.
+logits = m.router(x.reshape(-1, 8))
+_, idx = jax.lax.top_k(logits, 2)
+assert idx.shape == (6, 2), f'routing indices {idx.shape} — one row per token'
 """,
         },
         {
-            "name": "Aux loss penalises collapse",
+            "name": "top_k and num_experts are honoured",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-E = 8
-# All-positive features, so a single positive router column really does win for
-# every token and the collapse below is total rather than approximate.
-x = jnp.abs(jax.random.normal(jax.random.key(6), (4, 32, 8))) + 0.1
+x = jax.random.normal(jax.random.key(10), (4, 8))
+for E, k in ((2, 1), (4, 2), (8, 4), (4, 4)):
+    m = {fn}(8, 16, E, top_k=k, rngs=nnx.Rngs(params=11))
+    assert len(m.experts) == E, f'E={E}: got {len(m.experts)} experts'
+    out = m(x)
+    assert out.shape == (4, 8), f'E={E}, k={k}: {out.shape}'
+    assert jnp.isfinite(out).all(), f'E={E}, k={k}: non-finite output'
 
-balanced = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=1, rngs=nnx.Rngs(0))
-balanced.w_router[...] = jnp.zeros_like(balanced.w_router[...])
-_, aux_bal = balanced(x)
-
-# Collapsed router: expert 0 outscores every other expert for every token, and
-# takes essentially all of the softmax mass too.
-collapsed = {fn}(d_model=8, d_hidden=16, num_experts=E, top_k=1, rngs=nnx.Rngs(0))
-w = jnp.zeros_like(collapsed.w_router[...])
-collapsed.w_router[...] = w.at[:, 0].set(50.0)
-_, aux_col = collapsed(x)
-
-assert aux_col > aux_bal, (
-    f'Routing every token to one expert must cost MORE than uniform routing: '
-    f'collapsed {float(aux_col):.3f} vs uniform {float(aux_bal):.3f}. '
-    'That penalty is the only thing preventing router collapse.'
-)
-assert aux_col > 0.9 * E, (
-    f'Total collapse means f_0 = 1 and P_0 = 1, so aux -> E * 1 * 1 = {E}. '
-    f'Got {float(aux_col):.3f} — either the E multiplier is missing or f_e is '
-    'not the fraction of tokens routed to expert e.'
-)
+# k == E is a dense mixture over every expert.
+m = {fn}(8, 16, 4, top_k=4, rngs=nnx.Rngs(params=12))
+w = jax.nn.softmax(m.router(x), axis=-1)
+ref = sum(w[:, e:e+1] * m.experts[e](x) for e in range(4))
+assert jnp.allclose(m(x), ref, atol=1e-5), 'With k == E this is a dense weighted mixture'
 """,
         },
         {
-            "name": "Gradients flow, including through the aux loss",
+            "name": "Gradients reach the router and the selected experts",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-layer = {fn}(d_model=8, d_hidden=16, num_experts=4, top_k=2, rngs=nnx.Rngs(0))
-x = jax.random.normal(jax.random.key(7), (2, 6, 8))
+m = {fn}(8, 16, 4, top_k=2, rngs=nnx.Rngs(params=13))
+x = jax.random.normal(jax.random.key(14), (8, 8))
 
-def loss_fn(m):
-    out, aux = m(x)
-    return jnp.sum(out ** 2) + 0.01 * aux
+grads = nnx.grad(lambda mod: jnp.sum(mod(x) ** 2))(m)
+state = nnx.state(grads)
 
-grads = nnx.grad(loss_fn)(layer)
-flat = nnx.state(grads)
-
-g_router = flat["w_router"][...]
-assert jnp.isfinite(g_router).all(), 'Non-finite router gradient'
-assert jnp.abs(g_router).max() > 1e-8, (
-    'The router received no gradient — routing weights must multiply the '
-    'expert outputs so gradient reaches w_router.'
+rk = state["router"]["kernel"]
+rv = rk[...] if isinstance(rk, nnx.Variable) else rk
+assert jnp.isfinite(rv).all(), 'Non-finite router gradient'
+assert float(jnp.abs(rv).sum()) > 0, (
+    'No gradient reached the router — the softmax weights must stay in the '
+    'differentiable path'
 )
 
-# The aux loss alone must also produce a router gradient, via P_e.
-g_aux = nnx.state(nnx.grad(lambda m: m(x)[1])(layer))["w_router"][...]
-assert jnp.abs(g_aux).max() > 1e-10, (
-    'The aux loss produced no router gradient. f_e is non-differentiable (it '
-    'comes from top_k), so the gradient must flow through the soft P_e term.'
-)
-
-@nnx.jit
-def fwd(m, inp):
-    return m(inp)
-
-o1, a1 = fwd(layer, x)
-o2, a2 = layer(x)
-assert jnp.allclose(o1, o2, atol=1e-5), 'jit changes the output'
-assert jnp.allclose(a1, a2, atol=1e-5), 'jit changes the aux loss'
+leaves = [v for v in jax.tree.leaves(state) if jnp.size(v)]
+assert leaves and all(jnp.isfinite(v).all() for v in leaves), 'Non-finite expert gradient'
 """,
         },
     ],

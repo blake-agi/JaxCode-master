@@ -188,11 +188,11 @@ reporting a diff.
 | 12 | [Linear Self-Attention](templates/12_linear_attention.ipynb) | 🔴 Hard | `linear_attention` |
 | 13 | [GPT-2 Transformer Block](templates/13_gpt2_block.ipynb) | 🔴 Hard | `gpt2_block` |
 | 14 | [KV Cache Attention](templates/14_kv_cache.ipynb) | 🔴 Hard | `kv_cache` |
-| 23 | [Multi-Head Cross-Attention](templates/23_cross_attention.ipynb) | 🟡 Medium | `cross_attention` |
+| 23 | [Cross-Attention](templates/23_cross_attention.ipynb) | 🟡 Medium | `cross_attention` |
 | 24 | [Rotary Position Embedding (RoPE)](templates/24_rope.ipynb) | 🔴 Hard | `rope` |
 | 25 | [Flash Attention (Tiled)](templates/25_flash_attention.ipynb) | 🔴 Hard | `flash_attention` |
 | 26 | [LoRA (Low-Rank Adaptation)](templates/26_lora.ipynb) | 🟡 Medium | `lora` |
-| 27 | [ViT Patch Embedding](templates/27_vit_patch.ipynb) | 🟡 Medium | `vit_patch` |
+| 27 | [Vision Transformer Patch Embedding](templates/27_vit_patch.ipynb) | 🟡 Medium | `vit_patch` |
 | 28 | [Mixture of Experts (MoE)](templates/28_moe.ipynb) | 🔴 Hard | `moe` |
 
 ### Training (6)

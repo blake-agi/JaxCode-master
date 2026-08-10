@@ -1,4 +1,4 @@
-"""LoRA — why B must start at zero, and where the parameter savings come from."""
+"""LoRA — a frozen base layer plus a trainable low-rank detour."""
 
 TASK = {
     "title": "LoRA (Low-Rank Adaptation)",
@@ -7,73 +7,65 @@ TASK = {
     "difficulty": "Medium",
     "function_name": "LoRALinear",
     "hint": (
-        "Store the base weight as a plain nnx.Variable so an nnx.Param filter "
-        "does not pick it up — that is what 'frozen' means here. A is (din, r) "
-        "with a small random init, B is (r, dout) initialised to ZEROS. Forward "
-        "is x @ W + (alpha / r) * ((x @ A) @ B); keep those two matmuls "
-        "separate, since collapsing to A @ B first builds the full (din, dout) "
-        "matrix you were trying to avoid."
+        "self.linear is an ordinary nnx.Linear you never train. lora_A is small "
+        "random, lora_B is ZEROS — so B @ A is zero and the adapter starts as an "
+        "exact no-op. Forward is linear(x) + (x @ A @ B) * scaling with "
+        "scaling = alpha / rank. To keep the base out of the optimizer, hold its "
+        "kernel and bias as nnx.Variable rather than nnx.Param, so "
+        "nnx.state(layer, nnx.Param) returns only the adapter."
     ),
     "description": r"""
-Implement a **LoRA**-adapted linear layer as an `nnx.Module`.
+Implement **LoRA**: freeze a pretrained linear layer and learn a low-rank
+correction beside it.
 
-$$h = xW + \frac{\alpha}{r}\,(xA)B$$
-
-where $W \in \mathbb{R}^{d_{in}\times d_{out}}$ is **frozen**,
-$A \in \mathbb{R}^{d_{in}\times r}$ and $B \in \mathbb{R}^{r\times d_{out}}$ are
-trainable, and $r \ll \min(d_{in}, d_{out})$.
+$$h = W_0 x + \frac{\alpha}{r}\,(B A) x, \qquad
+A \in \mathbb{R}^{d_{in} \times r},\; B \in \mathbb{R}^{r \times d_{out}}$$
 
 ### Signature
 ```python
 class LoRALinear(nnx.Module):
-    def __init__(self, din, dout, rank, alpha=1.0, *, rngs: nnx.Rngs):
-        ...
-    def __call__(self, x):
-        ...  # (..., din) -> (..., dout)
+    def __init__(self, in_features, out_features, rank, alpha=1.0,
+                 *, rngs: nnx.Rngs): ...
+    def __call__(self, x): ...
 ```
 
-### Rules
-- Name the three tensors `self.W` `(din, dout)`, `self.A` `(din, rank)` and
-  `self.B` `(rank, dout)` — the tests read and overwrite them by name
-- The base weight must **not** be an `nnx.Param` — use a plain `nnx.Variable`,
-  so `nnx.split(model, nnx.Param, ...)` sees only the adapter
-- `A`: random init (scaled normal is fine). `B`: **zeros**
-- Keep `(x @ A) @ B` factored; never form `A @ B`
-- Scale by `alpha / rank`
-- No bias term
+### Requirements
+- `self.linear`: an `nnx.Linear(in_features, out_features)` that is **frozen**
+- `self.lora_A`: small random, shape `(in_features, rank)`
+- `self.lora_B`: **zeros**, shape `(rank, out_features)`
+- `self.scaling = alpha / rank`
+- Only `lora_A` and `lora_B` are trainable
 
-### Why B must be zero
-At initialization $BA = 0$, so $h = xW$ exactly — the adapted model is
-**identical** to the base model. Training therefore starts from the pretrained
-function rather than from a randomly perturbed one, which is what makes LoRA
-stable at high learning rates.
+### Why B starts at zero
+At initialization $BA = 0$, so the adapted layer is **exactly** the pretrained
+one. Fine-tuning therefore starts from the pretrained function rather than a
+perturbed one — no warmup, no risk of destroying the base model on step one.
+If both $A$ and $B$ were zero the gradient would also be zero and nothing would
+ever learn, so exactly one of them is zeroed: random $A$ gives $B$ something to
+receive gradient through.
 
-Both matrices zero would be broken instead: $\partial \mathcal{L}/\partial A
-\propto B^\top = 0$ and $\partial\mathcal{L}/\partial B \propto (xA)^\top = 0$,
-so nothing ever moves. You need exactly one of them zero — the product vanishes
-but the gradients do not. (By symmetry, random-$B$/zero-$A$ works too;
-zero-$B$ is the convention.)
+### The parameter arithmetic
+A $4096 \times 4096$ layer holds 16.8M weights. With $r = 8$ the adapter holds
+$4096 \times 8 + 8 \times 4096 = 65{,}536$ — about **0.4%**. That is what makes
+it possible to keep dozens of task-specific adapters for one base model, and to
+train on a single GPU: the optimizer state, which for Adam is 2 floats per
+trainable parameter, shrinks by the same factor.
 
-### The arithmetic that makes it worth it
-For $d_{in}=d_{out}=4096$: full fine-tuning trains $16.8$M parameters per
-matrix. LoRA at $r=8$ trains $2 \cdot 4096 \cdot 8 = 65$K — **0.39%**.
+### What $\alpha/r$ is for
+It decouples the learning rate from the rank. Without it, doubling $r$ roughly
+doubles the update magnitude and you would have to retune the learning rate
+every time. With the scaling, $r$ becomes a capacity knob you can sweep freely.
 
-The memory win is bigger than the parameter count suggests, because Adam keeps
-*two* fp32 moments per trainable parameter ([[adam]]). Optimizer state drops by
-the same 256x, and that — not the parameter count — is usually what decides
-whether a model fits on your GPU.
+### At inference, LoRA is free
+$W_0 + \frac{\alpha}{r}BA$ can be folded into a single matrix once training
+ends, so a merged adapter costs exactly nothing at serving time. The detour
+only exists while you are training.
 
-### Why $\alpha/r$ and not just $\alpha$
-The scale keeps the update magnitude roughly constant as you change $r$, so
-retuning the rank does not force you to retune the learning rate. In practice
-people fix $\alpha$ (often $2r$) and sweep $r$.
-
-### The deployment property
-After training, $W' = W + \frac{\alpha}{r}AB$ can be folded into the base weight
-once, giving a plain linear layer with **zero** added inference latency —
-unlike adapter layers, which add depth to the forward pass. And since the base
-weight is untouched, many task-specific LoRAs can be swapped against one shared
-frozen model.
+### ⚠️ A JAX layout note
+PyTorch stores `lora_A` as `(rank, in_features)` and computes `x @ A.T @ B.T`.
+Flax kernels are `(in, out)`, so here `A` is `(in_features, rank)` and `B` is
+`(rank, out_features)` and the forward pass is a plain `x @ A @ B` — the same
+maths, transposed to match the surrounding convention.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -81,16 +73,14 @@ from flax import nnx
 
 
 class LoRALinear(nnx.Module):
-    """Linear layer with a frozen base weight and a trainable low-rank adapter."""
+    """Frozen linear layer plus a trainable low-rank adapter."""
 
-    def __init__(self, din: int, dout: int, rank: int, alpha: float = 1.0,
-                 *, rngs: nnx.Rngs):
-        # Expected attributes: self.W (din, dout) frozen, self.A (din, rank) and
-        # self.B (rank, dout) trainable.
+    def __init__(self, in_features: int, out_features: int, rank: int,
+                 alpha: float = 1.0, *, rngs: nnx.Rngs):
         pass  # Replace this
 
     def __call__(self, x):
-        """(..., din) -> (..., dout)"""
+        """(..., in_features) -> (..., out_features)"""
         pass  # Replace this
 ''',
     "solution": '''import jax
@@ -99,248 +89,196 @@ from flax import nnx
 
 
 class LoRALinear(nnx.Module):
-    """Linear layer with a frozen base weight and a trainable low-rank adapter."""
+    def __init__(self, in_features: int, out_features: int, rank: int,
+                 alpha: float = 1.0, *, rngs: nnx.Rngs):
+        self.linear = nnx.Linear(in_features, out_features, rngs=rngs)
 
-    def __init__(self, din: int, dout: int, rank: int, alpha: float = 1.0,
-                 *, rngs: nnx.Rngs):
-        self.din, self.dout, self.rank = din, dout, rank
+        # Freeze the base: demote its Params to plain Variables so
+        # nnx.state(self, nnx.Param) — what an optimizer filters on — sees only
+        # the adapter. This is the JAX counterpart of requires_grad_(False).
+        self.linear.kernel = nnx.Variable(self.linear.kernel[...])
+        self.linear.bias = nnx.Variable(self.linear.bias[...])
+
+        # A random, B zero -> B @ A == 0 -> the adapter starts as a no-op.
+        self.lora_A = nnx.Param(
+            jax.random.normal(rngs.params(), (in_features, rank)) * 0.01
+        )
+        self.lora_B = nnx.Param(jnp.zeros((rank, out_features)))
         self.scaling = alpha / rank
 
-        # Plain nnx.Variable, NOT nnx.Param — this is what "frozen" means here:
-        # an nnx.Param filter will not collect it, so no gradient is produced.
-        key_w, key_a = jax.random.split(rngs.params(), 2)
-        self.W = nnx.Variable(
-            jax.random.normal(key_w, (din, dout)) * (1.0 / jnp.sqrt(din))
-        )
-
-        # A random, B zero -> the adapter contributes exactly nothing at init,
-        # while both still receive gradient on the first step.
-        self.A = nnx.Param(jax.random.normal(key_a, (din, rank)) * 0.01)
-        self.B = nnx.Param(jnp.zeros((rank, dout)))
-
     def __call__(self, x):
-        base = x @ self.W[...]
-        # Kept factored: (..., din) @ (din, r) @ (r, dout). Forming A @ B first
-        # would build the full (din, dout) matrix LoRA exists to avoid.
-        delta = (x @ self.A[...]) @ self.B[...]
-        return base + self.scaling * delta
+        return self.linear(x) + (x @ self.lora_A[...] @ self.lora_B[...]) * self.scaling
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
 from flax import nnx
 
-layer = LoRALinear(64, 64, rank=4, alpha=8.0, rngs=nnx.Rngs(0))
+layer = LoRALinear(64, 64, rank=4, alpha=8.0, rngs=nnx.Rngs(params=0))
 x = jax.random.normal(jax.random.key(1), (2, 64))
 
-print("adapter output at init:", float(jnp.abs(layer(x) - x @ layer.W[...]).max()))
+base = layer.linear(x)
+print("adapter is a no-op at init:", bool(jnp.allclose(layer(x), base)))
 
-params = nnx.state(layer, nnx.Param)
-n = sum(p.size for p in jax.tree.leaves(params))
-print(f"trainable params: {n}  (full weight would be {64 * 64})")
-print(f"                  {100 * n / (64 * 64):.1f}% of full fine-tuning")
+trainable = sum(v.size for v in jax.tree.leaves(nnx.state(layer, nnx.Param)))
+print(f"trainable: {trainable} of {64*64 + 64} base weights "
+      f"({100*trainable/(64*64+64):.1f}%)")
 ''',
     "tests": [
         {
-            "name": "Identity at initialization",
+            "name": "Structure: frozen base, adapter shapes",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-layer = {fn}(32, 16, rank=4, alpha=8.0, rngs=nnx.Rngs(0))
-x = jax.random.normal(jax.random.key(1), (5, 32))
+layer = {fn}(8, 4, rank=2, alpha=4.0, rngs=nnx.Rngs(params=0))
 
-out = layer(x)
-assert out.shape == (5, 16), f'Expected (5, 16), got {out.shape}'
+assert isinstance(layer.linear, nnx.Linear), (
+    f'self.linear must be an nnx.Linear, got {type(layer.linear)}'
+)
+assert layer.lora_A[...].shape == (8, 2), (
+    f'lora_A should be (in_features, rank) = (8, 2), got {layer.lora_A[...].shape}'
+)
+assert layer.lora_B[...].shape == (2, 4), (
+    f'lora_B should be (rank, out_features) = (2, 4), got {layer.lora_B[...].shape}'
+)
+assert abs(layer.scaling - 2.0) < 1e-6, f'scaling should be alpha/rank = 2.0, got {layer.scaling}'
 
-base = x @ layer.W[...]
-assert jnp.allclose(out, base, atol=1e-6), (
-    f'At init B is zero so the adapter must contribute EXACTLY nothing: '
-    f'max deviation {float(jnp.abs(out - base).max()):.2e}. This is the property '
-    'that lets LoRA start from the pretrained function.'
+x = jax.random.normal(jax.random.key(1), (3, 8))
+assert layer(x).shape == (3, 4), f'{layer(x).shape}'
+""",
+        },
+        {
+            "name": "B is zero, so the adapter starts as an exact no-op",
+            "code": """
+import jax
+import jax.numpy as jnp
+from flax import nnx
+
+layer = {fn}(16, 16, rank=4, alpha=8.0, rngs=nnx.Rngs(params=2))
+
+assert jnp.allclose(layer.lora_B[...], 0.0), (
+    'lora_B must be initialised to ZEROS so the adapter contributes nothing '
+    'at step 0 and fine-tuning starts from the pretrained function'
+)
+assert not jnp.allclose(layer.lora_A[...], 0.0), (
+    'lora_A must NOT be zero — if both were zero the gradient would be zero '
+    'too and the adapter could never learn'
+)
+
+x = jax.random.normal(jax.random.key(3), (4, 16))
+assert jnp.allclose(layer(x), layer.linear(x), atol=1e-6), (
+    'At init the output must equal the frozen base layer exactly'
 )
 """,
         },
         {
-            "name": "B is zero, A is not",
+            "name": "Only the adapter is trainable",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-layer = {fn}(24, 12, rank=4, alpha=1.0, rngs=nnx.Rngs(0))
-
-A = layer.A[...]
-B = layer.B[...]
-assert A.shape == (24, 4), f'A should be (din, rank) = (24, 4), got {A.shape}'
-assert B.shape == (4, 12), f'B should be (rank, dout) = (4, 12), got {B.shape}'
-
-assert jnp.allclose(B, 0.0), f'B must be initialised to zeros, got max |B| = {float(jnp.abs(B).max())}'
-assert jnp.abs(A).max() > 1e-8, (
-    'A must NOT be zero — if both were zero, dL/dA and dL/dB would both vanish '
-    'and the adapter could never learn anything.'
-)
-""",
-        },
-        {
-            "name": "Base weight is frozen, adapter is trainable",
-            "code": """
-import jax
-import jax.numpy as jnp
-from flax import nnx
-
-layer = {fn}(16, 8, rank=2, alpha=4.0, rngs=nnx.Rngs(0))
-
+layer = {fn}(16, 8, rank=2, alpha=2.0, rngs=nnx.Rngs(params=4))
 params = nnx.state(layer, nnx.Param)
-leaves = jax.tree.leaves(params)
-n_params = sum(p.size for p in leaves)
+total = sum(v.size for v in jax.tree.leaves(params))
 
-expected = 16 * 2 + 2 * 8   # A + B
-assert n_params == expected, (
-    f'nnx.Param should collect ONLY A and B ({expected} values), found {n_params}. '
-    'The base weight must be a plain nnx.Variable so it is excluded from the '
-    'trainable state.'
+expected = 16 * 2 + 2 * 8      # lora_A + lora_B
+assert total == expected, (
+    f'nnx.state(layer, nnx.Param) holds {total} values, expected {expected} '
+    '(lora_A + lora_B only). The base layer must be frozen — an optimizer '
+    'filtering on nnx.Param would otherwise train it.'
 )
-assert n_params < 16 * 8, f'The adapter ({n_params}) must be smaller than the full weight ({16*8})'
 """,
         },
         {
-            "name": "Gradient flows to A and B but not W",
+            "name": "Matches the reference formula once B is non-zero",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-layer = {fn}(16, 8, rank=2, alpha=4.0, rngs=nnx.Rngs(0))
-x = jax.random.normal(jax.random.key(2), (4, 16))
-W_before = jnp.array(layer.W[...])
+layer = {fn}(8, 4, rank=2, alpha=6.0, rngs=nnx.Rngs(params=5))
+layer.lora_B[...] = jax.random.normal(jax.random.key(6), (2, 4))
 
-
-def loss_fn(m):
-    return jnp.sum(m(x) ** 2)
-
-
-grads = nnx.grad(loss_fn)(layer)
-g_leaves = jax.tree.leaves(grads)
-assert len(g_leaves) > 0, 'No gradients produced'
-
-# Every collected gradient belongs to the adapter.
-total = sum(g.size for g in g_leaves)
-assert total == 16 * 2 + 2 * 8, (
-    f'nnx.grad should differentiate only the Params (A and B), got {total} values'
-)
-
-flat = nnx.state(grads)
-gA = flat["A"][...]
-gB = flat["B"][...]
-assert jnp.abs(gB).max() > 1e-8, (
-    'dL/dB must be non-zero — it is proportional to (xA)^T, and A is non-zero'
-)
-assert jnp.allclose(gA, 0.0, atol=1e-9), (
-    f'At init dL/dA is proportional to B^T = 0, so it must vanish on the FIRST '
-    f'step, got max {float(jnp.abs(gA).max()):.2e}'
-)
-assert jnp.allclose(layer.W[...], W_before), 'The base weight must not be mutated'
+x = jax.random.normal(jax.random.key(7), (3, 8))
+ref = layer.linear(x) + (x @ layer.lora_A[...] @ layer.lora_B[...]) * (6.0 / 2)
+assert jnp.allclose(layer(x), ref, atol=1e-5), 'Output does not match W0 x + (alpha/r) B A x'
 """,
         },
         {
-            "name": "alpha / rank scaling",
+            "name": "scaling is alpha / rank",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-x = jax.random.normal(jax.random.key(3), (3, 20))
-
-def with_alpha(alpha, rank=4):
-    m = {fn}(20, 10, rank=rank, alpha=alpha, rngs=nnx.Rngs(0))
-    # Give B a fixed non-zero value so the adapter actually contributes.
-    m.B[...] = jnp.ones_like(m.B[...]) * 0.1
-    return m, m(x) - x @ m.W[...]
-
-_, d1 = with_alpha(1.0)
-_, d2 = with_alpha(2.0)
-assert jnp.allclose(d2, 2 * d1, rtol=1e-4), (
-    'Doubling alpha must double the adapter contribution'
-)
-
-# Pin the divisor exactly: at each rank the delta must equal
-# (alpha / rank) * (x A) B. An implementation that scales by alpha alone, or
-# forgets the scaling entirely, fails here.
-for rank, alpha in ((2, 4.0), (4, 4.0), (8, 16.0)):
-    m = {fn}(20, 10, rank=rank, alpha=alpha, rngs=nnx.Rngs(0))
-    m.B[...] = jax.random.normal(jax.random.key(9), m.B[...].shape) * 0.3
-
-    delta = m(x) - x @ m.W[...]
-    expected = (alpha / rank) * ((x @ m.A[...]) @ m.B[...])
-    assert jnp.allclose(delta, expected, atol=1e-5), (
-        f'rank={rank} alpha={alpha}: the adapter must be scaled by '
-        f'alpha/rank = {alpha / rank}, max diff '
-        f'{float(jnp.abs(delta - expected).max()):.2e}'
+for rank, alpha in ((2, 8.0), (4, 8.0), (8, 16.0)):
+    layer = {fn}(8, 8, rank=rank, alpha=alpha, rngs=nnx.Rngs(params=8))
+    assert abs(layer.scaling - alpha / rank) < 1e-6, (
+        f'rank={rank}, alpha={alpha}: scaling should be {alpha/rank}, got {layer.scaling}'
     )
 
-    # Scaling by alpha alone would be wrong by exactly a factor of `rank`.
-    wrong = alpha * ((x @ m.A[...]) @ m.B[...])
-    if rank != 1:
-        assert not jnp.allclose(delta, wrong, atol=1e-5), (
-            f'rank={rank}: the contribution is not divided by rank'
-        )
+# Doubling alpha doubles the adapter's contribution.
+a = {fn}(8, 8, rank=2, alpha=2.0, rngs=nnx.Rngs(params=9))
+b = {fn}(8, 8, rank=2, alpha=4.0, rngs=nnx.Rngs(params=9))
+delta = jax.random.normal(jax.random.key(10), (2, 8))
+a.lora_B[...] = delta
+b.lora_B[...] = delta
+x = jax.random.normal(jax.random.key(11), (3, 8))
+da = a(x) - a.linear(x)
+db = b(x) - b.linear(x)
+assert jnp.allclose(db, 2 * da, atol=1e-5), 'Doubling alpha must double the adapter output'
 """,
         },
         {
-            "name": "Matches the explicit low-rank formula",
+            "name": "Gradients reach the adapter and not the base",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-layer = {fn}(12, 6, rank=3, alpha=6.0, rngs=nnx.Rngs(0))
-layer.B[...] = jax.random.normal(jax.random.key(4), layer.B[...].shape) * 0.3
+layer = {fn}(8, 4, rank=2, alpha=2.0, rngs=nnx.Rngs(params=12))
+layer.lora_B[...] = jnp.ones((2, 4)) * 0.1
+x = jax.random.normal(jax.random.key(13), (4, 8))
 
-x = jax.random.normal(jax.random.key(5), (7, 12))
-got = layer(x)
+grads = nnx.grad(lambda m: jnp.sum(m(x) ** 2))(layer)
+state = nnx.state(grads)
 
-W, A, B = layer.W[...], layer.A[...], layer.B[...]
-expected = x @ W + (6.0 / 3) * ((x @ A) @ B)
-assert jnp.allclose(got, expected, atol=1e-5), (
-    f'max diff {float(jnp.abs(got - expected).max()):.2e}'
-)
+for name in ("lora_A", "lora_B"):
+    g = state[name]
+    val = g[...] if isinstance(g, nnx.Variable) else g
+    assert jnp.isfinite(val).all(), f'Non-finite gradient for {name}'
+    assert float(jnp.abs(val).sum()) > 0, f'No gradient reached {name}'
 
-# Folding the adapter into the base weight must give the same function.
-merged = W + (6.0 / 3) * (A @ B)
-assert jnp.allclose(got, x @ merged, atol=1e-4), (
-    'W + (alpha/r) A B should reproduce the layer exactly — this is what makes '
-    'LoRA free at inference time.'
+flat = jax.tree.leaves(state)
+assert len(flat) == 2, (
+    f'nnx.grad should differentiate only the two adapter matrices, got '
+    f'{len(flat)} gradient leaves — the base layer is not frozen'
 )
 """,
         },
         {
-            "name": "Shapes, batching and jit",
+            "name": "Merging the adapter reproduces the output",
             "code": """
 import jax
 import jax.numpy as jnp
 from flax import nnx
 
-layer = {fn}(16, 32, rank=2, alpha=4.0, rngs=nnx.Rngs(0))
+# At inference W0 + (alpha/r) A B folds into one matrix, so LoRA is free.
+layer = {fn}(8, 4, rank=2, alpha=4.0, rngs=nnx.Rngs(params=14))
+layer.lora_B[...] = jax.random.normal(jax.random.key(15), (2, 4))
 
-for shape in ((16,), (4, 16), (2, 3, 16)):
-    x = jax.random.normal(jax.random.key(6), shape)
-    out = layer(x)
-    assert out.shape == shape[:-1] + (32,), (
-        f'Input {shape} should give {shape[:-1] + (32,)}, got {out.shape}'
-    )
+x = jax.random.normal(jax.random.key(16), (5, 8))
+merged_kernel = layer.linear.kernel[...] + layer.scaling * (
+    layer.lora_A[...] @ layer.lora_B[...]
+)
+merged = x @ merged_kernel + layer.linear.bias[...]
 
-x = jax.random.normal(jax.random.key(7), (4, 16))
-
-@nnx.jit
-def fwd(m, inp):
-    return m(inp)
-
-assert jnp.allclose(fwd(layer, x), layer(x), atol=1e-6), 'jit changes the result'
-
-# Per-example vmap agrees with the batched call.
-per = jax.vmap(lambda row: layer(row))(x)
-assert jnp.allclose(per, layer(x), atol=1e-5), 'vmap disagrees with the batched call'
+assert jnp.allclose(layer(x), merged, atol=1e-5), (
+    'A merged weight must reproduce the LoRA output exactly — if not, the '
+    'adapter is not a plain additive low-rank term'
+)
 """,
         },
     ],
