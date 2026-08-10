@@ -46,11 +46,15 @@ sum of $d_k$ independent unit-variance terms, so
 $$\operatorname{Var}(q \cdot k) = d_k, \qquad \operatorname{std}(q \cdot k) = \sqrt{d_k}$$
 
 At $d_k = 64$ the raw logits have standard deviation $8$, so across a few hundred
-keys the gap between the largest logit and a typical one runs to $20$–$30$.
-`softmax` of that is numerically one-hot. And the Jacobian of softmax is
-$\operatorname{diag}(p) - pp^\top$, which vanishes as $p$ becomes one-hot — so
-the layer stops passing gradient before training has learned anything. Dividing
-by $\sqrt{d_k}$ pulls the logit variance back to $1$ regardless of head width,
+keys the gap between the largest logit and the mean runs to about $23$ (measured
+over 300 trials: 10th–90th percentile $19$–$28$).
+
+Concretely, at that scale one key takes roughly **59%** of the attention mass;
+after dividing by $\sqrt{64}$ it takes **3%**. So the unscaled version is not
+literally one-hot, but it is sharply peaked — and the Jacobian of softmax,
+$\operatorname{diag}(p) - pp^\top$, shrinks toward zero as $p$ concentrates, so
+the layer passes progressively less gradient the sharper it gets. Dividing by
+$\sqrt{d_k}$ pulls the logit variance back to $1$ regardless of head width,
 which is exactly why you can widen heads without retuning the initialisation.
 
 Interviewers probe two things here. First that the scale is present at all.

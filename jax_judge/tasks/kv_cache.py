@@ -55,9 +55,14 @@ shifted right by `S_past` — using an unshifted `triu` silently blocks the
 cached history and is the classic bug here.
 
 ### The memory arithmetic
-Cache size is $2 \times B \times H \times S \times d_k \times \text{bytes}$.
-For Llama-3-70B in bf16 (80 layers, 8 KV heads, $d_k=128$) that is about
-320 KiB per token — roughly 10 GB at 32k context, per sequence. At batch 32 the
+Cache size is
+$2 \times L \times B \times H_{kv} \times S \times d_k \times \text{bytes}$
+— the leading 2 is K and V, and $L$ is the layer count, which is easy to drop
+and worth a factor of 80.
+
+For Llama-3-70B in bf16 ($L=80$, $H_{kv}=8$, $d_k=128$, 2 bytes) that is
+$2 \times 80 \times 8 \times 128 \times 2 = 327{,}680$ bytes = **320 KiB per
+token** — roughly 10 GiB at 32k context, per sequence. At batch 32 the
 cache dwarfs the weights, which is why GQA, int8 KV and PagedAttention all
 exist.
 

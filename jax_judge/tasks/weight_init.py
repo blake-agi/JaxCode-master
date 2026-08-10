@@ -15,7 +15,8 @@ TASK = {
     "description": r"""
 Implement **Kaiming (He) initialization**, the standard for ReLU networks.
 
-$$W \sim \mathcal{N}\left(0,\ \sqrt{\frac{2}{\text{fan\_in}}}\right)$$
+$$W \sim \mathcal{N}\!\left(0,\ \sigma^2\right), \qquad
+\sigma = \sqrt{\frac{2}{\text{fan\_in}}}$$
 
 ### Signature
 ```python
@@ -26,8 +27,9 @@ def kaiming_init(key, weight):
 ### Rules
 - Draw from a **normal** distribution with mean 0
 - `std = sqrt(2 / fan_in)`
-- `fan_in` is the input dimension — `weight.shape[0]` for a 2-D `(din, dout)`
-  kernel, and `weight.shape[0]` for a 1-D array
+- `fan_in` is the input dimension, which is `weight.shape[0]` in both cases:
+  a 2-D Flax kernel is `(in_features, out_features)`, and a 1-D array has only
+  one axis
 - Do not use `nnx.initializers` or `jax.nn.initializers`
 
 ### Where the 2 comes from

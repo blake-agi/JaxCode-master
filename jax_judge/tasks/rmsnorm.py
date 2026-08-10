@@ -34,10 +34,11 @@ LayerNorm centres *and* scales: it subtracts $\mu$ and divides by $\sigma$.
 RMSNorm only scales, dividing by the root-mean-square. So it drops the mean
 subtraction and the $\beta$ shift, leaving one learnable vector instead of two.
 
-That turns out to cost nothing in quality while removing two reductions from
-the critical path — and at LLM scale, normalization is bandwidth-bound, not
-FLOP-bound, so removing a pass over the data is a real win. This is why
-essentially every model after LLaMA switched.
+That turns out to cost nothing in quality while halving the reductions:
+LayerNorm needs two passes over the feature axis (the mean, then the variance
+around it), RMSNorm needs one (the mean of squares). At LLM scale normalization
+is bandwidth-bound rather than FLOP-bound, so dropping a pass over the data is
+a real win. This is why essentially every model after LLaMA switched.
 
 ### The trap
 If your implementation still matches LayerNorm on zero-mean input, that proves
