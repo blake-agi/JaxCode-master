@@ -82,7 +82,7 @@ xt, xj = torch.tensor(x), jnp.asarray(x)
 
 guarded("relu", lambda: compare("relu", F.relu(xt), load("relu")["relu"](xj)))
 
-_gelu = load("gelu")["gelu"]
+_gelu = load("gelu")["my_gelu"]
 guarded("gelu (exact/erf)", lambda: compare(
     "gelu (exact/erf)", F.gelu(xt, approximate="none"), _gelu(xj, approximate=False)))
 guarded("gelu (tanh approx)", lambda: compare(
@@ -101,10 +101,10 @@ def _layernorm() -> None:
     with torch.no_grad():
         ln_t.weight.copy_(torch.tensor(rng.standard_normal(D).astype(np.float32)))
         ln_t.bias.copy_(torch.tensor(rng.standard_normal(D).astype(np.float32)))
-    ln_j = load("layernorm")["LayerNorm"](D, rngs=nnx.Rngs(params=0))
-    ln_j.scale[...] = jnp.asarray(ln_t.weight.detach().numpy())
-    ln_j.bias[...] = jnp.asarray(ln_t.bias.detach().numpy())
-    compare("layernorm", ln_t(xt), ln_j(xj))
+    my_layer_norm = load("layernorm")["my_layer_norm"]
+    gamma = jnp.asarray(ln_t.weight.detach().numpy())
+    beta = jnp.asarray(ln_t.bias.detach().numpy())
+    compare("layernorm", ln_t(xt), my_layer_norm(xj, gamma, beta))
 
 
 guarded("layernorm", _layernorm)
@@ -115,36 +115,29 @@ def _batchnorm() -> None:
     bn_t.train()
     out_t = bn_t(xt)
 
-    bn_j = load("batchnorm")["BatchNorm"](D, rngs=nnx.Rngs(params=0))
-    out_j = bn_j(xj, use_running_average=False)
+    my_batch_norm = load("batchnorm")["my_batch_norm"]
+    g, b = jnp.ones(D), jnp.zeros(D)
+    rm, rv = jnp.zeros(D), jnp.ones(D)
+    out_j, rm_new, rv_new = my_batch_norm(xj, g, b, rm, rv, momentum=0.1, training=True)
+
     compare("batchnorm (training output)", out_t, out_j)
+    compare("batchnorm (running_mean)", bn_t.running_mean, rm_new, atol=1e-5)
 
-    compare("batchnorm (running_mean after 1 step)",
-            bn_t.running_mean, bn_j.running_mean[...], atol=1e-5)
-
-    # ⚠️ REAL FRAMEWORK DIVERGENCE, verified empirically:
-    #   flax  nnx.BatchNorm -> running_var uses the BIASED   variance (ddof=0)
-    #   torch BatchNorm1d   -> running_var uses the UNBIASED variance (ddof=1)
-    # Both normalise with the biased variance; only the buffer differs, by
-    # exactly n/(n-1). JAXCode teaches JAX, so it follows Flax. We therefore
-    # check against Flax, and separately assert that the gap to torch is
-    # precisely the Bessel factor — which proves the divergence is understood
-    # rather than accidental.
-    fb = nnx.BatchNorm(D, momentum=0.9, epsilon=1e-5, rngs=nnx.Rngs(0))
-    fb(xj, use_running_average=False)
-    compare("batchnorm (running_var matches flax nnx.BatchNorm)",
-            torch.tensor(np.asarray(fb.var[...])), bn_j.running_var[...], atol=1e-5)
-
+    # This task follows the ORIGINAL TorchCode convention (and flax's): the
+    # running buffer uses the BIASED variance. torch.nn.BatchNorm1d uses the
+    # unbiased one, so the gap is exactly the Bessel factor n/(n-1).
     n = x.shape[0]
     biased = x.var(axis=0, ddof=0)
-    torch_from_biased = 0.9 + 0.1 * biased * (n / (n - 1))
-    compare("batchnorm (torch gap is exactly the Bessel factor n/(n-1))",
-            bn_t.running_var, jnp.asarray(torch_from_biased), atol=1e-5)
+    compare("batchnorm (biased running_var, flax/TorchCode convention)",
+            torch.tensor(np.asarray(0.9 + 0.1 * biased)), rv_new, atol=1e-5)
+    compare("batchnorm (torch gap is exactly n/(n-1))",
+            bn_t.running_var,
+            jnp.asarray(0.9 + 0.1 * biased * (n / (n - 1))), atol=1e-5)
 
-    # Inference mode, against Flax's own layer.
-    compare("batchnorm (eval matches flax running stats)",
-            torch.tensor(np.asarray(fb(xj, use_running_average=True))),
-            bn_j(xj, use_running_average=True), atol=1e-5)
+    # Eval mode normalises with the buffers and changes nothing.
+    eval_out, rm2, rv2 = my_batch_norm(xj, g, b, rm_new, rv_new, training=False)
+    expected = (x - np.asarray(rm_new)) / np.sqrt(np.asarray(rv_new) + 1e-5)
+    compare("batchnorm (eval uses the buffers)", torch.tensor(expected), eval_out, atol=1e-4)
 
 
 guarded("batchnorm", _batchnorm)
@@ -154,7 +147,7 @@ guarded("batchnorm", _batchnorm)
 
 def _linear() -> None:
     lin_t = nn.Linear(16, 8)
-    lin_j = load("linear")["Linear"](16, 8, rngs=nnx.Rngs(params=0))
+    lin_j = load("linear")["SimpleLinear"](16, 8, rngs=nnx.Rngs(params=0))
     lin_j.w[...] = jnp.asarray(lin_t.weight.detach().numpy().T)   # (out,in) -> (in,out)
     lin_j.b[...] = jnp.asarray(lin_t.bias.detach().numpy())
     compare("linear (after weight transpose)", lin_t(xt), lin_j(xj))
@@ -169,7 +162,7 @@ def _embedding() -> None:
     V, E, T = 50, 12, 7
     idx = rng.integers(0, V, size=(4, T))
     emb_t = nn.Embedding(V, E)
-    emb_j = load("embedding")["Embedding"](V, E, rngs=nnx.Rngs(params=0))
+    emb_j = load("embedding")["MyEmbedding"](V, E, rngs=nnx.Rngs(params=0))
     emb_j.table[...] = jnp.asarray(emb_t.weight.detach().numpy())
     compare("embedding", emb_t(torch.tensor(idx)), emb_j(jnp.asarray(idx)))
 
@@ -180,17 +173,15 @@ guarded("embedding", _embedding)
 
 
 def _conv2d() -> None:
-    img = rng.standard_normal((2, 9, 9, 3)).astype(np.float32)   # NHWC
-    ker = rng.standard_normal((3, 3, 3, 4)).astype(np.float32)   # HWIO
-    conv2d = load("conv2d")["conv2d"]
-    img_t = torch.tensor(img).permute(0, 3, 1, 2)                # -> NCHW
-    ker_t = torch.tensor(ker).permute(3, 2, 0, 1)                # HWIO -> OIHW
+    # The task now uses torch's own NCHW/OIHW layout, so nothing is transposed.
+    img = rng.standard_normal((2, 3, 9, 9)).astype(np.float32)   # NCHW
+    ker = rng.standard_normal((4, 3, 3, 3)).astype(np.float32)   # OIHW
+    my_conv2d = load("conv2d")["my_conv2d"]
 
-    # torch's padding="same" only supports stride 1, so SAME is checked there.
-    for stride, padding, t_pad in ((1, "VALID", 0), (2, "VALID", 0), (1, "SAME", "same")):
-        out_t = F.conv2d(img_t, ker_t, stride=stride, padding=t_pad).permute(0, 2, 3, 1)
-        out_j = conv2d(jnp.asarray(img), jnp.asarray(ker), stride=stride, padding=padding)
-        compare(f"conv2d stride={stride} {padding}", out_t, out_j, atol=1e-4)
+    for stride, pad in ((1, 0), (2, 0), (1, 1), (2, 1)):
+        out_t = F.conv2d(torch.tensor(img), torch.tensor(ker), stride=stride, padding=pad)
+        out_j = my_conv2d(jnp.asarray(img), jnp.asarray(ker), stride=stride, padding=pad)
+        compare(f"conv2d stride={stride} pad={pad}", out_t, out_j, atol=1e-4)
 
 
 guarded("conv2d", _conv2d)
@@ -251,7 +242,7 @@ guarded("cross_entropy (ignore_index)", _ce_ignore)
 
 
 def _adam() -> None:
-    adam_update = load("adam")["adam_update"]
+    MyAdam = load("adam")["MyAdam"]
     target = rng.standard_normal(5).astype(np.float32)
     p0 = np.zeros(5, dtype=np.float32)
     lr, b1, b2, eps = 0.05, 0.9, 0.999, 1e-8
@@ -263,12 +254,12 @@ def _adam() -> None:
         ((pt - torch.tensor(target)) ** 2).sum().backward()
         opt.step()
 
+    opt = MyAdam(lr=lr, betas=(b1, b2), eps=eps)
     pj = jnp.asarray(p0.copy())
-    state = {"m": jnp.zeros(5), "v": jnp.zeros(5)}
+    state = opt.init(pj)
     loss_fn = lambda p: jnp.sum((p - jnp.asarray(target)) ** 2)  # noqa: E731
-    for t in range(1, 26):
-        g = jax.grad(loss_fn)(pj)
-        pj, state = adam_update(pj, g, state, t, lr, b1, b2, eps)
+    for _ in range(25):
+        pj, state = opt.update(pj, jax.grad(loss_fn)(pj), state)
 
     compare("adam (25 steps vs torch.optim.Adam)", pt, pj, atol=1e-4)
 

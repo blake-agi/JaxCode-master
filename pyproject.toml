@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
     "jax>=0.4.30",
     "flax>=0.10",
+    "optax>=0.2",
 ]
 
 [project.optional-dependencies]
