@@ -1,311 +1,248 @@
-"""Byte-pair encoding — train the merges, then apply them."""
+"""Byte-Pair Encoding — train merges by frequency, then apply them in order."""
 
 TASK = {
     "title": "Byte-Pair Encoding (BPE)",
     "category": "Inference & Decoding",
     "order": 4,
+    "number": "35",
     "difficulty": "Hard",
-    "function_name": "train_bpe",
-    # The tests exercise both halves, so apply_merges must be pulled from the
-    # notebook namespace alongside train_bpe.
-    "extra_names": ["apply_merges"],
+    "function_name": "SimpleBPE",
     "hint": (
-        "Keep each word as a LIST of symbols, not a string — after the first "
-        "merge a symbol is more than one character, and 'is this pair adjacent' "
-        "is a question about symbols. One helper does the real work: given a "
-        "symbol list and a pair, walk it left to right and emit the joined "
-        "symbol, skipping two positions when you match. Both halves of the task "
-        "call it, which is the point — training is 'find the best pair, apply "
-        "it, recount from scratch', and applying is the same rewrite replayed. "
-        "Recount from scratch every round: merging changes which pairs exist. "
-        "And make the argmax total: max() over a dict is only as deterministic "
-        "as your tie-break."
+        "Represent each word as a tuple of symbols plus an end-of-word marker "
+        "'</w>', kept in a {symbols: frequency} dict. Each round, count every "
+        "adjacent pair weighted by word frequency, take the most frequent, "
+        "record it, and rewrite every word with that pair fused. encode() then "
+        "replays the recorded merges IN ORDER — the order is the model, so "
+        "applying them by frequency instead of by training order gives different "
+        "tokens."
     ),
     "description": r"""
-Implement **byte-pair encoding** — both halves: learn the merge list from a
-corpus, and apply it to a new word.
+Implement **Byte-Pair Encoding**: learn a merge table from a corpus, then use
+it to tokenize new text.
 
 ### Signature
 ```python
-def train_bpe(word_counts, num_merges):
-    ...  # -> list[tuple[str, str]], the merges in the order they were learned
-
-def apply_merges(word, merges):
-    ...  # -> list[str], the word's symbols after replaying every merge
+class SimpleBPE:
+    def __init__(self): ...                        # self.merges = []
+    def train(self, corpus, num_merges): ...       # fills self.merges
+    def encode(self, text): ...                    # -> list[str]
 ```
 
-`word_counts` is `{"low": 5, "lower": 2, ...}`. A word starts as its list of
-characters. `apply_merges` must be defined too — the judge tests both.
-
 ### The algorithm
-1. Count every adjacent symbol pair across the corpus, weighted by word count.
-2. Take the most frequent pair. **Ties break by taking the lexicographically
-   smallest pair**, so the output is deterministic.
-3. Record it and merge every occurrence, scanning each word left to right.
-4. Repeat `num_merges` times, or stop early if no pair occurs more than once.
-
-`apply_merges` replays the recorded merges **in learned order** — the order is
-the algorithm; applying them in a different order gives different tokens.
+1. Split every word into characters and append `'</w>'` as an end-of-word marker
+2. Count each word's frequency in the corpus
+3. Repeat `num_merges` times:
+   - count every adjacent symbol pair, weighted by word frequency
+   - take the **most frequent** pair, append it to `self.merges`
+   - rewrite every word with that pair fused into one symbol
+4. `encode` splits on whitespace, appends `'</w>'`, and replays `self.merges`
+   **in training order**
 
 ### Rules
-- Pure Python — no `jnp` needed, and no `tokenizers`/`sentencepiece`
-- Deterministic: same input, same merge list, every time
-- Left-to-right, non-overlapping merges (in `aaa`, merging `(a,a)` gives `aa a`)
+- Pure Python — no JAX needed here, and no `tokenizers`/`sentencepiece`
+- Stop early if there are no pairs left
+- `self.merges` is a list of `(a, b)` tuples in the order they were learned
 
-### Why subword tokenization exists
-Word-level vocabularies cannot represent anything they did not see in training —
-every new name, typo or compound becomes `<UNK>`, and the information is gone.
-Character-level has no `<UNK>` problem but multiplies the sequence length by the
-average characters-per-token (roughly 4x on English), and attention is quadratic
-in length.
+### Why the merge ORDER is the whole model
+The merges are not a set, they are a **sequence**. `('e','s')` learned before
+`('es','t')` is what lets `est` form at all — apply them in a different order
+and the second merge never matches. This is why a BPE tokenizer ships its merge
+list as an ordered file, and why you cannot add a merge in the middle without
+retraining.
 
-BPE splits the difference: frequent words stay single tokens, rare ones
-decompose into reusable pieces, and because every symbol bottoms out in the base
-alphabet, **nothing is ever unrepresentable**. That is the property that
-matters — an open vocabulary at a fixed model size. This exercise uses
-characters as that alphabet; production tokenizers use raw *bytes*, so that even
-an unseen character or a broken UTF-8 fragment still encodes.
+### Why `'</w>'`
+Without an end-of-word marker, `"est"` in *estimate* and `"est"` in *fastest*
+are the same symbol, and the tokenizer cannot tell a prefix from a suffix. The
+marker makes word-final position part of the token's identity.
 
-### What it costs
-Tokenization is a frozen, corpus-dependent preprocessing step, and its seams
-leak into model behaviour: arithmetic is bad partly because numbers tokenize
-inconsistently, character-level tasks ("how many r's in strawberry") are hard
-because the model never sees characters, and languages under-represented in the
-training corpus get far more tokens per word — a direct cost and context-length
-penalty for those users.
+### What BPE buys you
+It sits between characters (no unknown tokens, but very long sequences) and
+whole words (short sequences, but a huge vocabulary and an `<UNK>` problem for
+anything unseen). BPE gets an open vocabulary — *any* string is encodable —
+with sequences only a few times longer than word-level. The cost is that token
+boundaries are a statistical artifact of the training corpus, which is exactly
+why models are bad at character-level tasks like counting letters.
 """,
-    "stub": '''def train_bpe(word_counts, num_merges):
-    """Learn BPE merges from a corpus.
+    "stub": '''class SimpleBPE:
+    """Byte-pair encoding: learn merges, then apply them."""
 
-    Args:
-        word_counts: {word: frequency}
-        num_merges:  maximum number of merges to learn
+    def __init__(self):
+        self.merges = []
 
-    Returns:
-        list[tuple[str, str]] — merges in the order learned.
-    """
-    pass  # Replace this
+    def train(self, corpus, num_merges):
+        """Learn `num_merges` merges from `corpus` (a list of words).
 
+        Fills self.merges with (a, b) tuples in the order learned.
+        """
+        pass  # Replace this
 
-def apply_merges(word, merges):
-    """Apply a learned merge list to a word.
-
-    Args:
-        word:   the string to tokenize
-        merges: list[tuple[str, str]] from train_bpe
-
-    Returns:
-        list[str] of symbols.
-    """
-    pass  # Replace this
+    def encode(self, text):
+        """Tokenize `text` by replaying self.merges in order. -> list[str]"""
+        pass  # Replace this
 ''',
-    "solution": '''def _merge_pair(symbols, pair):
-    """Left-to-right, non-overlapping merge of `pair` inside one symbol list."""
-    out = []
-    i = 0
-    while i < len(symbols):
-        if (
-            i < len(symbols) - 1
-            and symbols[i] == pair[0]
-            and symbols[i + 1] == pair[1]
-        ):
-            out.append(symbols[i] + symbols[i + 1])
-            i += 2
-        else:
-            out.append(symbols[i])
-            i += 1
-    return out
+    "solution": '''class SimpleBPE:
+    def __init__(self):
+        self.merges = []
 
+    def train(self, corpus, num_merges):
+        # Each word becomes a tuple of symbols + end-of-word marker.
+        vocab = {}
+        for word in corpus:
+            symbols = tuple(word) + ("</w>",)
+            vocab[symbols] = vocab.get(symbols, 0) + 1
 
-def train_bpe(word_counts, num_merges):
-    # Each word becomes a list of characters, carrying its corpus frequency.
-    vocab = {word: list(word) for word in word_counts}
-    merges = []
+        self.merges = []
+        for _ in range(num_merges):
+            # Count adjacent pairs, weighted by how often the word occurs.
+            pairs = {}
+            for word, freq in vocab.items():
+                for i in range(len(word) - 1):
+                    pair = (word[i], word[i + 1])
+                    pairs[pair] = pairs.get(pair, 0) + freq
+            if not pairs:
+                break
 
-    for _ in range(num_merges):
-        pair_counts = {}
-        for word, symbols in vocab.items():
-            freq = word_counts[word]
-            for a, b in zip(symbols, symbols[1:]):
-                pair_counts[(a, b)] = pair_counts.get((a, b), 0) + freq
+            best = max(pairs, key=pairs.get)
+            self.merges.append(best)
 
-        if not pair_counts:
-            break
+            # Rewrite every word with `best` fused into a single symbol.
+            new_vocab = {}
+            for word, freq in vocab.items():
+                new_word = []
+                i = 0
+                while i < len(word):
+                    if i < len(word) - 1 and (word[i], word[i + 1]) == best:
+                        new_word.append(word[i] + word[i + 1])
+                        i += 2
+                    else:
+                        new_word.append(word[i])
+                        i += 1
+                new_vocab[tuple(new_word)] = freq
+            vocab = new_vocab
 
-        # max() alone is not deterministic across dict orderings, so break ties
-        # on the pair itself: highest count, then lexicographically smallest.
-        best = min(pair_counts, key=lambda p: (-pair_counts[p], p))
-        if pair_counts[best] < 2:
-            break
-
-        merges.append(best)
-        vocab = {w: _merge_pair(s, best) for w, s in vocab.items()}
-
-    return merges
-
-
-def apply_merges(word, merges):
-    symbols = list(word)
-    # Order matters: the merges must be replayed exactly as they were learned.
-    for pair in merges:
-        symbols = _merge_pair(symbols, pair)
-    return symbols
+    def encode(self, text):
+        all_tokens = []
+        for word in text.split():
+            symbols = list(word) + ["</w>"]
+            # Replay merges IN TRAINING ORDER — the order is the model.
+            for a, b in self.merges:
+                i = 0
+                while i < len(symbols) - 1:
+                    if symbols[i] == a and symbols[i + 1] == b:
+                        symbols = symbols[:i] + [a + b] + symbols[i + 2:]
+                    else:
+                        i += 1
+            all_tokens.extend(symbols)
+        return all_tokens
 ''',
-    "demo": '''corpus = {"low": 5, "lower": 2, "newest": 6, "widest": 3}
+    "demo": '''bpe = SimpleBPE()
+corpus = ["low"] * 5 + ["lower"] * 2 + ["newest"] * 6 + ["widest"] * 3
 
-merges = train_bpe(corpus, num_merges=10)
-for i, m in enumerate(merges, 1):
-    print(f"{i:>2}. {m[0]!r} + {m[1]!r} -> {m[0] + m[1]!r}")
+bpe.train(corpus, num_merges=10)
+print("learned merges, in order:")
+for i, m in enumerate(bpe.merges):
+    print(f"  {i}: {m}")
 
-print()
-for w in ("lowest", "newer", "wildest"):
-    print(f"{w:>8} -> {apply_merges(w, merges)}")
+print("\\nencode('newest'):", bpe.encode("newest"))
+print("encode('lowest'):", bpe.encode("lowest"), "  <- never seen, still encodable")
 ''',
     "tests": [
         {
-            "name": "Learns the highest-frequency pair first",
+            "name": "Learns the most frequent pair first",
             "code": """
-corpus = {"low": 5, "lower": 2, "newest": 6, "widest": 3}
-merges = {fn}(corpus, 1)
+bpe = {fn}()
+corpus = ["low"] * 5 + ["lower"] * 2 + ["newest"] * 6 + ["widest"] * 3
+bpe.train(corpus, num_merges=1)
 
-assert isinstance(merges, list), f'Must return a list, got {type(merges).__name__}'
-assert len(merges) == 1, f'Asked for 1 merge, got {len(merges)}'
-assert isinstance(merges[0], tuple) and len(merges[0]) == 2, (
-    f'Each merge must be a 2-tuple of strings, got {merges[0]!r}'
-)
-
-# ('e','s') appears in newest (6) and widest (3) = 9; ('s','t') is also 9 but
-# ('e','s') is lexicographically smaller, so the tie-break picks it.
-assert merges[0] == ('e', 's'), (
-    f"Expected ('e', 's') with count 9, got {merges[0]!r}. Counts must be "
-    'weighted by word frequency, and ties broken lexicographically.'
+assert len(bpe.merges) == 1, f'Expected 1 merge, got {len(bpe.merges)}'
+# ('e','s') appears in newest(6) + widest(3) = 9, more than any other pair.
+assert bpe.merges[0] == ("e", "s"), (
+    f"First merge should be ('e', 's') with count 9, got {bpe.merges[0]}"
 )
 """,
         },
         {
-            "name": "Frequencies are weighted, not just word counts",
+            "name": "Merges accumulate in order",
             "code": """
-# 'ab' appears in one word but 100 times; 'cd' in three words, 1 time each.
-corpus = {"ab": 100, "cd": 1, "cdx": 1, "cdy": 1}
-merges = {fn}(corpus, 1)
+bpe = {fn}()
+corpus = ["low"] * 5 + ["lower"] * 2 + ["newest"] * 6 + ["widest"] * 3
+bpe.train(corpus, num_merges=4)
 
-assert merges[0] == ('a', 'b'), (
-    f"Expected ('a','b') with weighted count 100, got {merges[0]!r}. "
-    'Pair counts must be weighted by each word frequency, not by how many '
-    'distinct words contain the pair.'
+assert len(bpe.merges) == 4, f'Expected 4 merges, got {len(bpe.merges)}'
+assert bpe.merges[0] == ("e", "s"), f'{bpe.merges[0]}'
+assert bpe.merges[1] == ("es", "t"), (
+    f"Second merge should fuse the previous result: ('es','t'), got {bpe.merges[1]}"
+)
+assert bpe.merges[2] == ("est", "</w>"), f'{bpe.merges[2]}'
+assert all(isinstance(m, tuple) and len(m) == 2 for m in bpe.merges), (
+    'merges must be a list of (a, b) tuples'
 )
 """,
         },
         {
-            "name": "Deterministic",
+            "name": "encode replays the merges",
             "code": """
-corpus = {"aa": 3, "bb": 3, "cc": 3, "ab": 1}
+bpe = {fn}()
+bpe.train(["low"] * 5 + ["lower"] * 2 + ["newest"] * 6 + ["widest"] * 3, num_merges=4)
 
-runs = [{fn}(dict(corpus), 3) for _ in range(5)]
-for r in runs[1:]:
-    assert r == runs[0], f'Non-deterministic output: {runs[0]} vs {r}'
-
-# All of ('a','a'), ('b','b'), ('c','c') tie at 3 -> lexicographic order.
-assert runs[0][0] == ('a', 'a'), f"Tie should resolve to ('a','a'), got {runs[0][0]!r}"
+toks = bpe.encode("newest")
+assert isinstance(toks, list), f'encode must return a list, got {type(toks)}'
+assert "est</w>" in toks, (
+    f"After 4 merges 'est</w>' should be one token, got {toks}"
+)
+assert "".join(toks) == "newest</w>", f'Tokens must reconstruct the word: {toks}'
 """,
         },
         {
-            "name": "Stops early when nothing repeats",
+            "name": "Untrained encoder splits into characters",
             "code": """
-corpus = {"abc": 1, "def": 1}
-merges = {fn}(corpus, 100)
+bpe = {fn}()
+assert bpe.merges == [], 'A fresh SimpleBPE should have no merges'
 
-assert len(merges) == 0, (
-    f'No pair occurs more than once, so no merge is justified. Got {merges}'
-)
-
-corpus2 = {"aa": 2}
-m2 = {fn}(corpus2, 100)
-assert len(m2) == 1, f'Only one merge is possible here, got {len(m2)}: {m2}'
-assert m2[0] == ('a', 'a'), f"Expected ('a','a'), got {m2[0]!r}"
-
-# num_merges is an upper bound, never exceeded.
-m3 = {fn}({"low": 5, "lower": 2, "newest": 6, "widest": 3}, 3)
-assert len(m3) <= 3, f'Asked for at most 3 merges, got {len(m3)}'
-""",
-        },
-        {
-            "name": "apply_merges replays in order",
-            "code": """
-corpus = {"low": 5, "lower": 2, "newest": 6, "widest": 3}
-merges = {fn}(corpus, 10)
-
-out = apply_merges("newest", merges)
-assert isinstance(out, list), f'apply_merges must return a list, got {type(out).__name__}'
-assert all(isinstance(s, str) for s in out), f'Symbols must be strings: {out}'
-assert "".join(out) == "newest", (
-    f'Concatenating the symbols must rebuild the word: {out} -> {"".join(out)!r}'
-)
-
-# A training word should compress to fewer symbols than characters.
-assert len(out) < len("newest"), (
-    f'"newest" is in the corpus so it should merge: got {out}'
-)
-
-# An unseen word is still representable — the whole point of BPE.
-unseen = apply_merges("zzz", merges)
-assert "".join(unseen) == "zzz", f'Unseen word broke: {unseen}'
-""",
-        },
-        {
-            "name": "Left-to-right, non-overlapping merges",
-            "code": """
-# In 'aaaa', merging ('a','a') left to right gives ['aa', 'aa'] — not
-# ['aa', 'a', 'a'] and not a greedy overlapping pass.
-out = apply_merges("aaaa", [('a', 'a')])
-assert out == ['aa', 'aa'], f"Expected ['aa','aa'], got {out}"
-
-out3 = apply_merges("aaa", [('a', 'a')])
-assert out3 == ['aa', 'a'], (
-    f"Expected ['aa','a'] — the merge is non-overlapping and scans left to "
-    f"right, got {out3}"
-)
-
-# Merge order is load-bearing.
-a = apply_merges("abab", [('a', 'b'), ('ab', 'ab')])
-assert a == ['abab'], f"Sequential merges should compose: got {a}"
-b = apply_merges("abab", [('ab', 'ab'), ('a', 'b')])
-assert b == ['ab', 'ab'], (
-    f"Applying ('ab','ab') first matches nothing (no 'ab' symbols exist yet), "
-    f"so the result differs: got {b}"
+toks = bpe.encode("hi there")
+assert toks == ["h", "i", "</w>", "t", "h", "e", "r", "e", "</w>"], (
+    f'With no merges, encode should give characters plus </w> markers, got {toks}'
 )
 """,
         },
         {
-            "name": "Round trip on the classic corpus",
+            "name": "Open vocabulary: unseen words still encode",
             "code": """
-corpus = {"low": 5, "lowest": 2, "newer": 6, "wider": 3, "new": 2}
+bpe = {fn}()
+bpe.train(["low"] * 5 + ["newest"] * 6, num_merges=5)
 
-for n in (5, 12):
-    merges = {fn}(corpus, n)
-    assert len(merges) > 0, f'{n} merges: should have learned at least one'
-    assert len(set(merges)) == len(merges), f'Duplicate merges learned: {merges}'
-    for word in corpus:
-        toks = apply_merges(word, merges)
-        assert "".join(toks) == word, f'{word!r} -> {toks} does not rebuild'
-        assert len(toks) <= len(word), f'{word!r} got longer: {toks}'
+toks = bpe.encode("zzz")
+assert "".join(toks) == "zzz</w>", f'Unseen word must still encode: {toks}'
+assert all(isinstance(t, str) for t in toks), 'Tokens must be strings'
 
-# Partway through training, shared subwords are visible: 'er' recurs across
-# newer/wider so it becomes one symbol before the full words do.
-mid = {fn}(corpus, 5)
-assert apply_merges("newer", mid) == ['new', 'er'], (
-    f"After 5 merges 'newer' should split as ['new','er'], got "
-    f"{apply_merges('newer', mid)}"
+multi = bpe.encode("low newest")
+assert "".join(multi) == "low</w>newest</w>", f'{multi}'
+assert multi.count("</w>") >= 2, 'Each word needs its own end-of-word marker'
+""",
+        },
+        {
+            "name": "Stops early when no pairs remain",
+            "code": """
+bpe = {fn}()
+# Single-character words: 'a' + '</w>' gives exactly one pair, then nothing.
+bpe.train(["a"], num_merges=100)
+assert len(bpe.merges) <= 1, (
+    f'Should stop when no pairs are left, got {len(bpe.merges)} merges'
 )
-assert 'er' in apply_merges("wider", mid), (
-    f"The 'er' token should be reused by 'wider' too, got {apply_merges('wider', mid)}"
-)
 
-# Given enough merges, corpus words collapse to a single token — that is the
-# expected end state, not a bug.
-full = {fn}(corpus, 12)
-assert apply_merges("lowest", full) == ['lowest'], (
-    f"With 12 merges 'lowest' should be one token, got {apply_merges('lowest', full)}"
+empty = {fn}()
+empty.train([], num_merges=5)
+assert empty.merges == [], 'An empty corpus should learn no merges'
+""",
+        },
+        {
+            "name": "Frequency weighting uses word counts",
+            "code": """
+bpe = {fn}()
+# 'ab' appears in one word repeated 100x; 'xy' in three distinct words once each.
+bpe.train(["ab"] * 100 + ["xy", "xyz", "xyw"], num_merges=1)
+assert bpe.merges[0] == ("a", "b"), (
+    f"Pair counting must weight by word FREQUENCY (ab: 100 vs xy: 3), got {bpe.merges[0]}"
 )
 """,
         },
