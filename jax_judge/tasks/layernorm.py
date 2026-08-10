@@ -3,7 +3,6 @@
 TASK = {
     "title": "Implement LayerNorm",
     "category": "Core Ops & Layers",
-    "order": 5,
     "number": "04",
     "difficulty": "Medium",
     "function_name": "my_layer_norm",

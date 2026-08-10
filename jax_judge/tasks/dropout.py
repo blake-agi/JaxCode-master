@@ -3,7 +3,6 @@
 TASK = {
     "title": "Implement Dropout",
     "category": "Core Ops & Layers",
-    "order": 8,
     "number": "17",
     "difficulty": "Easy",
     "function_name": "MyDropout",

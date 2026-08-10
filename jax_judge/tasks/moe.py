@@ -3,7 +3,6 @@
 TASK = {
     "title": "Mixture of Experts (MoE)",
     "category": "Attention & Transformers",
-    "order": 13,
     "number": "28",
     "difficulty": "Hard",
     "function_name": "MixtureOfExperts",

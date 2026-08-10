@@ -3,7 +3,6 @@
 TASK = {
     "title": "SwiGLU MLP",
     "category": "Core Ops & Layers",
-    "order": 10,
     "number": "15",
     "difficulty": "Medium",
     "function_name": "SwiGLUMLP",

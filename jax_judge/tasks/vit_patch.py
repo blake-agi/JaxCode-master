@@ -3,7 +3,6 @@
 TASK = {
     "title": "ViT Patch Embedding",
     "category": "Attention & Transformers",
-    "order": 12,
     "number": "27",
     "difficulty": "Medium",
     "function_name": "PatchEmbedding",

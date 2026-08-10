@@ -164,15 +164,15 @@ reporting a diff.
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
 | 01 | [Implement ReLU](templates/01_relu.ipynb) | 🟢 Easy | `relu` |
-| 19 | [GELU Activation](templates/19_gelu.ipynb) | 🟢 Easy | `gelu` |
 | 02 | [Implement Softmax](templates/02_softmax.ipynb) | 🟢 Easy | `softmax` |
 | 03 | [Simple Linear Layer](templates/03_linear.ipynb) | 🟡 Medium | `linear` |
 | 04 | [Implement LayerNorm](templates/04_layernorm.ipynb) | 🟡 Medium | `layernorm` |
-| 08 | [Implement RMSNorm](templates/08_rmsnorm.ipynb) | 🟡 Medium | `rmsnorm` |
 | 07 | [Implement BatchNorm](templates/07_batchnorm.ipynb) | 🟡 Medium | `batchnorm` |
+| 08 | [Implement RMSNorm](templates/08_rmsnorm.ipynb) | 🟡 Medium | `rmsnorm` |
+| 15 | [SwiGLU MLP](templates/15_mlp.ipynb) | 🟡 Medium | `mlp` |
 | 17 | [Implement Dropout](templates/17_dropout.ipynb) | 🟢 Easy | `dropout` |
 | 18 | [Embedding Layer](templates/18_embedding.ipynb) | 🟢 Easy | `embedding` |
-| 15 | [SwiGLU MLP](templates/15_mlp.ipynb) | 🟡 Medium | `mlp` |
+| 19 | [GELU Activation](templates/19_gelu.ipynb) | 🟢 Easy | `gelu` |
 | 20 | [Kaiming Initialization](templates/20_weight_init.ipynb) | 🟢 Easy | `weight_init` |
 | 22 | [2D Convolution](templates/22_conv2d.ipynb) | 🟡 Medium | `conv2d` |
 
@@ -183,28 +183,28 @@ reporting a diff.
 | 05 | [Softmax Attention](templates/05_attention.ipynb) | 🔴 Hard | `attention` |
 | 06 | [Multi-Head Attention](templates/06_mha.ipynb) | 🔴 Hard | `mha` |
 | 09 | [Causal Self-Attention](templates/09_causal_attention.ipynb) | 🔴 Hard | `causal_attention` |
-| 23 | [Multi-Head Cross-Attention](templates/23_cross_attention.ipynb) | 🟡 Medium | `cross_attention` |
 | 10 | [Grouped Query Attention](templates/10_gqa.ipynb) | 🔴 Hard | `gqa` |
 | 11 | [Sliding Window Attention](templates/11_sliding_window.ipynb) | 🔴 Hard | `sliding_window` |
 | 12 | [Linear Self-Attention](templates/12_linear_attention.ipynb) | 🔴 Hard | `linear_attention` |
-| 25 | [Flash Attention (Tiled)](templates/25_flash_attention.ipynb) | 🔴 Hard | `flash_attention` |
-| 24 | [Rotary Position Embedding (RoPE)](templates/24_rope.ipynb) | 🔴 Hard | `rope` |
-| 14 | [KV Cache Attention](templates/14_kv_cache.ipynb) | 🔴 Hard | `kv_cache` |
 | 13 | [GPT-2 Transformer Block](templates/13_gpt2_block.ipynb) | 🔴 Hard | `gpt2_block` |
+| 14 | [KV Cache Attention](templates/14_kv_cache.ipynb) | 🔴 Hard | `kv_cache` |
+| 23 | [Multi-Head Cross-Attention](templates/23_cross_attention.ipynb) | 🟡 Medium | `cross_attention` |
+| 24 | [Rotary Position Embedding (RoPE)](templates/24_rope.ipynb) | 🔴 Hard | `rope` |
+| 25 | [Flash Attention (Tiled)](templates/25_flash_attention.ipynb) | 🔴 Hard | `flash_attention` |
+| 26 | [LoRA (Low-Rank Adaptation)](templates/26_lora.ipynb) | 🟡 Medium | `lora` |
 | 27 | [ViT Patch Embedding](templates/27_vit_patch.ipynb) | 🟡 Medium | `vit_patch` |
 | 28 | [Mixture of Experts (MoE)](templates/28_moe.ipynb) | 🔴 Hard | `moe` |
-| 26 | [LoRA (Low-Rank Adaptation)](templates/26_lora.ipynb) | 🟡 Medium | `lora` |
 
 ### Training (6)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
 | 16 | [Cross-Entropy Loss](templates/16_cross_entropy.ipynb) | 🟢 Easy | `cross_entropy` |
-| 40 | [Linear Regression](templates/40_linear_regression.ipynb) | 🟡 Medium | `linear_regression` |
+| 21 | [Gradient Norm Clipping](templates/21_gradient_clipping.ipynb) | 🟢 Easy | `gradient_clipping` |
 | 29 | [Implement Adam Optimizer](templates/29_adam.ipynb) | 🟡 Medium | `adam` |
 | 30 | [Cosine LR Scheduler with Warmup](templates/30_cosine_lr.ipynb) | 🟡 Medium | `cosine_lr` |
-| 21 | [Gradient Norm Clipping](templates/21_gradient_clipping.ipynb) | 🟢 Easy | `gradient_clipping` |
 | 31 | [Gradient Accumulation](templates/31_gradient_accumulation.ipynb) | 🟢 Easy | `gradient_accumulation` |
+| 40 | [Linear Regression](templates/40_linear_regression.ipynb) | 🟡 Medium | `linear_regression` |
 
 ### Inference & Decoding (5)
 

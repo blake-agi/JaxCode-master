@@ -3,7 +3,6 @@
 TASK = {
     "title": "Hessian with jacfwd(jacrev(f))",
     "category": "JAX Fundamentals",
-    "order": 9,
     "number": "b_09",
     "difficulty": "Medium",
     "function_name": "hessian_matrix",

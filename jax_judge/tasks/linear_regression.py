@@ -3,7 +3,6 @@
 TASK = {
     "title": "Linear Regression",
     "category": "Training",
-    "order": 2,
     "number": "40",
     "difficulty": "Medium",
     "function_name": "LinearRegression",

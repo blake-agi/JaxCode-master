@@ -3,7 +3,6 @@
 TASK = {
     "title": "Byte-Pair Encoding (BPE)",
     "category": "Inference & Decoding",
-    "order": 4,
     "number": "35",
     "difficulty": "Hard",
     "function_name": "SimpleBPE",

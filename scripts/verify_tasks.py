@@ -22,14 +22,12 @@ os.environ.setdefault("XLA_FLAGS", "--xla_force_host_platform_device_count=8")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from jax_judge._contract import MissingSymbols, build_namespace, render_test  # noqa: E402
+from jax_judge._term import BOLD, DIM, GREEN, RED, RESET, YELLOW  # noqa: E402,F401
 from jax_judge.tasks import TASKS, list_tasks  # noqa: E402
 
-GREEN, RED, YELLOW, DIM, BOLD, RESET = (
-    "\033[92m", "\033[91m", "\033[93m", "\033[90m", "\033[1m", "\033[0m",
-)
-
 REQUIRED_KEYS = {
-    "title", "category", "order", "difficulty", "function_name",
+    "title", "category", "number", "difficulty", "function_name",
     "hint", "description", "stub", "solution", "tests",
 }
 
@@ -60,22 +58,20 @@ def verify(task_id: str, task: dict) -> tuple[bool, list[str]]:
         problems.append(f"solution does not define '{fn_name}'")
         return False, problems
 
-    # Build the test namespace EXACTLY as jax_judge.engine.check does: the task's
-    # function_name plus any declared extra_names, and nothing else. Handing the
-    # tests the whole solution namespace instead would let a task pass here and
-    # then fail in a real notebook with a NameError.
-    extra_names = task.get("extra_names", [])
-    for name in extra_names:
-        if name not in namespace:
-            problems.append(f"extra_names lists '{name}' but the solution never defines it")
-    if problems:
+    # Build the namespace through the SAME contract the notebook judge uses,
+    # so a task cannot pass here and then fail with NameError in a real notebook.
+    try:
+        judge_ns = build_namespace(task, namespace)
+    except MissingSymbols as missing:
+        for name in missing.missing:
+            problems.append(
+                f"tests will need '{name}' but the solution never defines it "
+                "(declare it in extra_names, or define it in the solution)"
+            )
         return False, problems
 
-    judge_ns = {fn_name: namespace[fn_name]}
-    judge_ns.update({n: namespace[n] for n in extra_names})
-
     for test in task["tests"]:
-        code = test["code"].replace("{fn}", fn_name)
+        code = render_test(task, test)
         ns = dict(judge_ns)
         try:
             exec(compile(code, f"<test:{task_id}:{test['name']}>", "exec"), ns)

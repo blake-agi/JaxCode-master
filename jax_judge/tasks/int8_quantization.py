@@ -3,7 +3,6 @@
 TASK = {
     "title": "INT8 Quantized Linear",
     "category": "Inference & Decoding",
-    "order": 5,
     "number": "36",
     "difficulty": "Hard",
     "function_name": "Int8Linear",

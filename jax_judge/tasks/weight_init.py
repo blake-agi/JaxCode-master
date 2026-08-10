@@ -3,7 +3,6 @@
 TASK = {
     "title": "Kaiming Initialization",
     "category": "Core Ops & Layers",
-    "order": 11,
     "number": "20",
     "difficulty": "Easy",
     "function_name": "kaiming_init",

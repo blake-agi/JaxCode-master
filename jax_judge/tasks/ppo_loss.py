@@ -3,7 +3,6 @@
 TASK = {
     "title": "PPO (Proximal Policy Optimization) Clipped Loss",
     "category": "RLHF & Preference Losses",
-    "order": 3,
     "number": "39",
     "difficulty": "Hard",
     "function_name": "ppo_loss",

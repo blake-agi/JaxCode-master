@@ -3,7 +3,6 @@
 TASK = {
     "title": "Gradient Accumulation",
     "category": "Training",
-    "order": 6,
     "number": "31",
     "difficulty": "Easy",
     "function_name": "accumulated_step",

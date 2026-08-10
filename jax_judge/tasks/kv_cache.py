@@ -3,7 +3,6 @@
 TASK = {
     "title": "KV Cache Attention",
     "category": "Attention & Transformers",
-    "order": 10,
     "number": "14",
     "difficulty": "Hard",
     "function_name": "KVCacheAttention",

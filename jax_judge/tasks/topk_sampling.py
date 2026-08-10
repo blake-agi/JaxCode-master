@@ -3,7 +3,6 @@
 TASK = {
     "title": "Top-k / Top-p Sampling",
     "category": "Inference & Decoding",
-    "order": 1,
     "number": "32",
     "difficulty": "Medium",
     "function_name": "sample_top_k_top_p",

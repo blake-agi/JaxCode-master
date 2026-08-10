@@ -3,7 +3,6 @@
 TASK = {
     "title": "Implement BatchNorm",
     "category": "Core Ops & Layers",
-    "order": 7,
     "number": "07",
     "difficulty": "Medium",
     "function_name": "my_batch_norm",

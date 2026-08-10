@@ -7,10 +7,7 @@ import pkgutil
 from pathlib import Path
 from typing import Any
 
-DIFFICULTY_ORDER = {"Easy": 0, "Medium": 1, "Hard": 2}
-
-# Curriculum order — notebooks are numbered from this list, and `status()`
-# groups the dashboard by these headings.
+# Display grouping for status(), the welcome notebook and the README table.
 CATEGORIES = [
     "JAX Fundamentals",
     "Core Ops & Layers",
@@ -35,21 +32,20 @@ def get_task(task_id: str) -> dict[str, Any] | None:
     return TASKS.get(task_id)
 
 
-def _sort_key(item: tuple[str, dict[str, Any]]) -> tuple[int, int, str]:
+def _sort_key(item: tuple[str, dict[str, Any]]) -> tuple[int, str]:
+    """Category first, then the authored notebook number.
+
+    The number IS the curriculum order: "01".."41" carried over from the
+    PyTorch original, and "b_01".."b_11" for the JAX-only additions. There used
+    to be a separate `order` field as well, which let the two disagree — a
+    category then listed as 01, 19, 02, 03 ...
+    """
     task_id, task = item
     cat = task.get("category", "")
     cat_idx = CATEGORIES.index(cat) if cat in CATEGORIES else len(CATEGORIES)
-    return (cat_idx, task.get("order", 999), task_id)
+    return (cat_idx, task.get("number", task_id))
 
 
 def list_tasks() -> list[tuple[str, dict[str, Any]]]:
-    """All tasks in curriculum order (category, then order within category)."""
+    """Every task in curriculum order: by category, then by notebook number."""
     return sorted(TASKS.items(), key=_sort_key)
-
-
-def list_by_difficulty() -> list[tuple[str, dict[str, Any]]]:
-    """All tasks sorted Easy -> Hard."""
-    return sorted(
-        TASKS.items(),
-        key=lambda t: (DIFFICULTY_ORDER.get(t[1]["difficulty"], 9), _sort_key(t)),
-    )

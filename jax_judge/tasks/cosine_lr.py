@@ -3,7 +3,6 @@
 TASK = {
     "title": "Cosine LR Scheduler with Warmup",
     "category": "Training",
-    "order": 4,
     "number": "30",
     "difficulty": "Medium",
     "function_name": "cosine_lr_schedule",

@@ -3,7 +3,6 @@
 TASK = {
     "title": "Implement ReLU",
     "category": "Core Ops & Layers",
-    "order": 1,
     "number": "01",
     "difficulty": "Easy",
     "function_name": "relu",

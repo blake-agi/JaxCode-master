@@ -3,7 +3,6 @@
 TASK = {
     "title": "GPT-2 Transformer Block",
     "category": "Attention & Transformers",
-    "order": 11,
     "number": "13",
     "difficulty": "Hard",
     "function_name": "GPT2Block",

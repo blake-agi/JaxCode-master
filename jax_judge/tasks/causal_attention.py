@@ -3,7 +3,6 @@
 TASK = {
     "title": "Causal Self-Attention",
     "category": "Attention & Transformers",
-    "order": 3,
     "number": "09",
     "difficulty": "Hard",
     "function_name": "causal_attention",

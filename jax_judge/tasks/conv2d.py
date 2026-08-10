@@ -3,7 +3,6 @@
 TASK = {
     "title": "2D Convolution",
     "category": "Core Ops & Layers",
-    "order": 12,
     "number": "22",
     "difficulty": "Medium",
     "function_name": "my_conv2d",

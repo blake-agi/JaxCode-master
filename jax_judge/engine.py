@@ -9,16 +9,16 @@ import time
 import traceback
 from typing import Any
 
+from jax_judge._contract import MissingSymbols, build_namespace, render_test
+from jax_judge._term import BOLD as _BOLD
+from jax_judge._term import CYAN as _CYAN
+from jax_judge._term import DIM as _DIM
+from jax_judge._term import GREEN as _GREEN
+from jax_judge._term import RED as _RED
+from jax_judge._term import RESET as _RESET
+from jax_judge._term import YELLOW as _YELLOW
 from jax_judge.tasks import get_task, TASKS
 from jax_judge.progress import mark_solved, mark_attempted
-
-_RESET = "\033[0m"
-_GREEN = "\033[92m"
-_RED = "\033[91m"
-_YELLOW = "\033[93m"
-_CYAN = "\033[96m"
-_DIM = "\033[90m"
-_BOLD = "\033[1m"
 
 
 def _get_user_namespace() -> dict[str, Any]:
@@ -187,19 +187,19 @@ def check(task_id: str) -> None:
     total_time = 0.0
 
     # Some tasks ask for more than one symbol (e.g. bpe wants train_bpe AND
-    # apply_merges). Those extras are pulled from the notebook namespace too.
-    extra_names = task.get("extra_names", [])
-    missing = [n for n in extra_names if n not in user_ns]
-    if missing:
-        print(f"\n{_RED}❌ Also need: {', '.join(missing)}{_RESET}")
+    # apply_merges). build_namespace resolves them all, or reports what is absent.
+    try:
+        base_ns = build_namespace(task, user_ns)
+    except MissingSymbols as missing:
+        names = missing.missing
+        print(f"\n{_RED}❌ Also need: {', '.join(names)}{_RESET}")
         print(f"{_DIM}   This task asks for more than one function. Define "
-              f"{'them' if len(missing) > 1 else 'it'} and re-run that cell.{_RESET}\n")
+              f"{'them' if len(names) > 1 else 'it'} and re-run that cell.{_RESET}\n")
         return
 
     for i, test in enumerate(tests, 1):
-        test_code = test["code"].replace("{fn}", fn_name)
-        namespace: dict[str, Any] = {fn_name: user_fn}
-        namespace.update({n: user_ns[n] for n in extra_names})
+        test_code = render_test(task, test)
+        namespace: dict[str, Any] = dict(base_ns)
 
         t0 = time.perf_counter()
         try:

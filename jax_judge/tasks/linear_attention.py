@@ -3,7 +3,6 @@
 TASK = {
     "title": "Linear Self-Attention",
     "category": "Attention & Transformers",
-    "order": 7,
     "number": "12",
     "difficulty": "Hard",
     "function_name": "linear_attention",

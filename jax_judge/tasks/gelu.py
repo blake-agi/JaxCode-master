@@ -3,7 +3,6 @@
 TASK = {
     "title": "GELU Activation",
     "category": "Core Ops & Layers",
-    "order": 2,
     "number": "19",
     "difficulty": "Easy",
     "function_name": "my_gelu",

@@ -17,9 +17,9 @@ A test suite that does NOT reject an attack has a hole; add a test that closes i
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from jax_judge._contract import build_namespace, render_test
+from jax_judge._term import BOLD, DIM, GREEN, RED, RESET
 from jax_judge.tasks import get_task
-
-GREEN, RED, DIM, BOLD, RESET = "\033[92m", "\033[91m", "\033[90m", "\033[1m", "\033[0m"
 
 
 def probe(task_id, label, src, symbol=None):
@@ -31,13 +31,12 @@ def probe(task_id, label, src, symbol=None):
     except Exception as e:
         print(f"  {DIM}(attack failed to compile: {e}){RESET}")
         return
-    base = {fn_name: ns[symbol or fn_name]}
-    for n in (t.get("extra_names") or []):
-        if n in ns:
-            base[n] = ns[n]
+    if symbol:                      # attack defines the impl under another name
+        ns = {**ns, fn_name: ns[symbol]}
+    base = build_namespace(t, ns)
     caught = []
     for test in t["tests"]:
-        code = test["code"].replace("{fn}", fn_name)
+        code = render_test(t, test)
         try:
             exec(compile(code, "<t>", "exec"), dict(base))
         except AssertionError as e:

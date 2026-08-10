@@ -5,6 +5,7 @@ import traceback
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Any, Dict, List, Optional
 
+from jax_judge._contract import MissingSymbols, build_namespace, render_test
 from jax_judge.tasks import get_task, TASKS
 
 def execute_code(task_id: str, user_code: str) -> Dict[str, Any]:
@@ -67,17 +68,27 @@ def execute_code(task_id: str, user_code: str) -> Dict[str, Any]:
             "tests": []
         }
 
-    user_fn = namespace[fn_name]
+    try:
+        base_ns = build_namespace(task, namespace)
+    except MissingSymbols as missing:
+        return {
+            "success": False,
+            "error": f"Also need: {', '.join(missing.missing)}. "
+                     "This task asks for more than one function.",
+            "stdout": stdout_capture.getvalue(),
+            "stderr": stderr_capture.getvalue(),
+            "passed": 0,
+            "total": total,
+            "tests": [],
+        }
+
     test_results: List[Dict[str, Any]] = []
 
     # 2. Run each test against the user's function
     for i, test in enumerate(tests, 1):
-        test_code = test["code"].replace("{fn}", fn_name)
-        test_namespace: Dict[str, Any] = {fn_name: user_fn}
-        for _n in task.get("extra_names", []):
-            if _n in namespace:
-                test_namespace[_n] = namespace[_n]
-        
+        test_code = render_test(task, test)
+        test_namespace: Dict[str, Any] = dict(base_ns)
+
         test_stdout = io.StringIO()
         test_stderr = io.StringIO()
         

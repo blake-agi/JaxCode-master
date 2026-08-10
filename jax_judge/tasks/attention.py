@@ -3,7 +3,6 @@
 TASK = {
     "title": "Softmax Attention",
     "category": "Attention & Transformers",
-    "order": 1,
     "number": "05",
     "difficulty": "Hard",
     "function_name": "scaled_dot_product_attention",

@@ -3,7 +3,6 @@
 TASK = {
     "title": "Newton's Method with lax.while_loop",
     "category": "JAX Fundamentals",
-    "order": 7,
     "number": "b_07",
     "difficulty": "Medium",
     "function_name": "newton_sqrt",

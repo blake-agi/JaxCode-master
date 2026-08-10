@@ -8,6 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from jax_judge._term import BOLD as _BOLD
+from jax_judge._term import DIM as _DIM
+from jax_judge._term import RESET as _RESET
 from jax_judge.tasks import list_tasks
 
 PROGRESS_PATH = os.environ.get("PROGRESS_PATH", "data/progress.json")
@@ -22,9 +25,6 @@ _DIFF_COLORS = {
     "Medium": "\033[93m",
     "Hard": "\033[91m",
 }
-_RESET = "\033[0m"
-_BOLD = "\033[1m"
-_DIM = "\033[90m"
 
 
 def _load() -> dict[str, Any]:

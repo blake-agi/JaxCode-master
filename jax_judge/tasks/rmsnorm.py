@@ -3,7 +3,6 @@
 TASK = {
     "title": "Implement RMSNorm",
     "category": "Core Ops & Layers",
-    "order": 6,
     "number": "08",
     "difficulty": "Medium",
     "function_name": "rms_norm",

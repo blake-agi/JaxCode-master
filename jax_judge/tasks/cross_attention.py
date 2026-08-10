@@ -3,7 +3,6 @@
 TASK = {
     "title": "Multi-Head Cross-Attention",
     "category": "Attention & Transformers",
-    "order": 4,
     "number": "23",
     "difficulty": "Medium",
     "function_name": "MultiHeadCrossAttention",

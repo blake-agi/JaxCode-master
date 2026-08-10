@@ -3,7 +3,6 @@
 TASK = {
     "title": "Stack a List of Pytrees",
     "category": "JAX Fundamentals",
-    "order": 4,
     "number": "b_04",
     "difficulty": "Medium",
     "function_name": "tree_stack",

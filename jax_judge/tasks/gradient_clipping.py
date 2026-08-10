@@ -3,7 +3,6 @@
 TASK = {
     "title": "Gradient Norm Clipping",
     "category": "Training",
-    "order": 5,
     "number": "21",
     "difficulty": "Easy",
     "function_name": "clip_grad_norm",

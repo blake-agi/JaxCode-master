@@ -3,7 +3,6 @@
 TASK = {
     "title": "Speculative Decoding",
     "category": "Inference & Decoding",
-    "order": 3,
     "number": "34",
     "difficulty": "Hard",
     "function_name": "speculative_decode",

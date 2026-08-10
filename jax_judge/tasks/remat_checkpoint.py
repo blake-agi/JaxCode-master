@@ -3,7 +3,6 @@
 TASK = {
     "title": "Gradient Checkpointing with jax.checkpoint",
     "category": "JAX Fundamentals",
-    "order": 10,
     "number": "b_10",
     "difficulty": "Medium",
     "function_name": "deep_chain",

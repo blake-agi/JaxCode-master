@@ -3,7 +3,6 @@
 TASK = {
     "title": "Implement Adam Optimizer",
     "category": "Training",
-    "order": 3,
     "number": "29",
     "difficulty": "Medium",
     "function_name": "MyAdam",
