@@ -226,7 +226,7 @@ pure function: `(params, grads, state) -> (params, state)`. Nothing is hidden.
 | `opt.step()` | `updates, state = opt.update(grads, state)`<br>`params = optax.apply_updates(params, updates)` |
 
 Below we skip Optax entirely and write Adam by hand, to show there is no magic —
-this is exactly [JAXCode's `adam` problem](../TorchCode-master/templates/40_adam.ipynb).
+this is exactly [JAXCode's `adam` problem](../templates/29_adam.ipynb).
 
 Note the **bias correction**: `m` and `v` start at zero, so at step 1 they are
 scaled down by `(1-β₁)` and `(1-β₂)`. Dividing by `1-β^t` undoes that, which is
