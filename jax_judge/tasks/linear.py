@@ -10,7 +10,7 @@ TASK = {
         "Registration in NNX is just assignment: any nnx.Param you set on self in "
         "__init__ is found automatically. Get a key by CALLING the stream — "
         "rngs.params() returns a fresh key and advances it — and note the weight "
-        "shape is (din, dout), because the forward pass is x @ w, not w @ x. "
+        "shape is (in_features, out_features), because the forward pass is x @ w, not w @ x. "
         "__call__ needs no reshaping: @ already contracts the last axis of x with "
         "the first of w, and the bias broadcasts. When use_bias is False, still "
         "define self.b (as None) so the attribute always exists."
@@ -22,17 +22,17 @@ $$y = xW + b, \qquad W \in \mathbb{R}^{d_{in} \times d_{out}},\; b \in \mathbb{R
 
 ### Rules
 - Subclass `nnx.Module`; do **not** use `nnx.Linear`
-- Signature: `SimpleLinear(din, dout, *, use_bias=True, rngs)`
+- Signature: `SimpleLinear(in_features, out_features, *, use_bias=True, rngs)`
 - Weights stored as `self.w`, bias as `self.b` (or `None` when `use_bias=False`)
 - Both must be wrapped in `nnx.Param`
-- Initialise `w` with `jax.random.normal(...) / sqrt(din)`; `b` with zeros
-- `__call__(x)` maps `(..., din) -> (..., dout)` — any number of leading axes
+- Initialise `w` with `jax.random.normal(...) / sqrt(in_features)`; `b` with zeros
+- `__call__(x)` maps `(..., in_features) -> (..., out_features)` — any number of leading axes
 
 ### The NNX mental model
 ```python
 class SimpleLinear(nnx.Module):
-    def __init__(self, din, dout, *, rngs: nnx.Rngs):
-        self.w = nnx.Param(jax.random.normal(rngs.params(), (din, dout)))
+    def __init__(self, in_features, out_features, *, rngs: nnx.Rngs):
+        self.w = nnx.Param(jax.random.normal(rngs.params(), (in_features, out_features)))
         ...
     def __call__(self, x):
         return x @ self.w
@@ -50,12 +50,12 @@ array itself use **`layer.w[...]`** — `layer.w[...] = new_weights` assigns,
 `layer.w[...]` reads. (The old `.value` property still exists but is deprecated
 in Flax 0.12.)
 
-Note the shape convention: JAX and Flax use `(din, dout)` and compute `x @ W`,
-whereas PyTorch stores `(dout, din)` and computes `x @ W.T`. Mixing them up is
+Note the shape convention: JAX and Flax use `(in_features, out_features)` and compute `x @ W`,
+whereas PyTorch stores `(out_features, in_features)` and computes `x @ W.T`. Mixing them up is
 the most common bug when porting weights between the two — and because a
 transposed square matrix has the right shape, it fails silently on square layers.
 
-The `1/sqrt(din)` scale is LeCun-style init: it keeps `Var(y) ≈ Var(x)` through
+The `1/sqrt(in_features)` scale is LeCun-style init: it keeps `Var(y) ≈ Var(x)` through
 the layer, so activations neither explode nor vanish as you stack them.
 """,
     "stub": '''import jax
@@ -66,11 +66,11 @@ from flax import nnx
 class SimpleLinear(nnx.Module):
     """y = x @ w + b"""
 
-    def __init__(self, din: int, dout: int, *, use_bias: bool = True, rngs: nnx.Rngs):
+    def __init__(self, in_features: int, out_features: int, *, use_bias: bool = True, rngs: nnx.Rngs):
         pass  # Replace this
 
     def __call__(self, x):
-        """(..., din) -> (..., dout)"""
+        """(..., in_features) -> (..., out_features)"""
         pass  # Replace this
 ''',
     "solution": '''import jax
@@ -79,13 +79,13 @@ from flax import nnx
 
 
 class SimpleLinear(nnx.Module):
-    def __init__(self, din: int, dout: int, *, use_bias: bool = True, rngs: nnx.Rngs):
+    def __init__(self, in_features: int, out_features: int, *, use_bias: bool = True, rngs: nnx.Rngs):
         # rngs.params() hands back a fresh key on every call.
         key = rngs.params()
-        self.w = nnx.Param(jax.random.normal(key, (din, dout)) / jnp.sqrt(din))
-        self.b = nnx.Param(jnp.zeros((dout,))) if use_bias else None
-        self.din = din
-        self.dout = dout
+        self.w = nnx.Param(jax.random.normal(key, (in_features, out_features)) / jnp.sqrt(in_features))
+        self.b = nnx.Param(jnp.zeros((out_features,))) if use_bias else None
+        self.din = in_features
+        self.dout = out_features
 
     def __call__(self, x):
         y = x @ self.w
@@ -116,7 +116,7 @@ from flax import nnx
 layer = {fn}(4, 3, rngs=nnx.Rngs(params=0))
 
 assert layer.w.shape == (4, 3), (
-    f'w should be (din, dout) = (4, 3), got {layer.w.shape}. '
+    f'w should be (in_features, out_features) = (4, 3), got {layer.w.shape}. '
     'JAX uses x @ W, not PyTorch\\'s W.T convention.'
 )
 assert layer.b.shape == (3,), f'b should be (3,), got {layer.b.shape}'
@@ -205,7 +205,7 @@ big = {fn}(256, 256, rngs=nnx.Rngs(params=0))
 std = float(jnp.std(big.w[...]))
 expected = 1.0 / jnp.sqrt(256.0)
 assert abs(std - expected) < 0.3 * expected, (
-    f'w std is {std:.5f}, expected ~{expected:.5f} (normal / sqrt(din))'
+    f'w std is {std:.5f}, expected ~{expected:.5f} (normal / sqrt(in_features))'
 )
 assert jnp.allclose(big.b[...], 0.0), 'Bias must be initialised to zeros'
 

@@ -34,8 +34,8 @@ $\pi = \text{softmax}(\text{logits}/T)$.
 
 ### Signature
 ```python
-def opd_loss(student_logits, teacher_logits, temperature=1.0,
-             teacher_weights=None, mask=None):
+def opd_loss(student_logits, teacher_logits, teacher_weights=None,
+             mask=None, temperature=1.0):
     # student_logits: (batch, seq, vocab)
     # teacher_logits: (batch, seq, vocab) or (n_teachers, batch, seq, vocab)
     # teacher_weights: (n_teachers,) or None -> uniform
@@ -82,8 +82,8 @@ loss is evaluated token-wise over them.
 import jax.numpy as jnp
 
 
-def opd_loss(student_logits, teacher_logits, temperature=1.0,
-             teacher_weights=None, mask=None):
+def opd_loss(student_logits, teacher_logits, teacher_weights=None,
+             mask=None, temperature=1.0):
     """On-policy distillation loss (reverse KL, temperature-scaled).
 
     Args:
@@ -102,8 +102,8 @@ def opd_loss(student_logits, teacher_logits, temperature=1.0,
 import jax.numpy as jnp
 
 
-def opd_loss(student_logits, teacher_logits, temperature=1.0,
-             teacher_weights=None, mask=None):
+def opd_loss(student_logits, teacher_logits, teacher_weights=None,
+             mask=None, temperature=1.0):
     # Normalise a single teacher up to a stack of one.
     teacher_logits = jnp.asarray(teacher_logits)
     if teacher_logits.ndim == student_logits.ndim:

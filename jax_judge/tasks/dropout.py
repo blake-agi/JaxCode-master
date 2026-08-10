@@ -11,24 +11,24 @@ TASK = {
         "keep = jax.random.bernoulli(key, 1.0 - self.rate, x.shape). Return "
         "jnp.where(keep, x, 0.0) / (1.0 - self.rate) — dividing by the keep "
         "probability is what makes it INVERTED dropout. Return x untouched when "
-        "deterministic=True, and short-circuit when rate == 0."
+        "deterministic=True, and short-circuit when p == 0."
     ),
     "description": r"""
 Implement **inverted dropout** as an `nnx.Module`.
 
-**Training:** zero each element independently with probability `rate`, then
-divide the survivors by `(1 - rate)`.
+**Training:** zero each element independently with probability `p`, then
+divide the survivors by `(1 - p)`.
 
 $$y_i = \frac{x_i \cdot m_i}{1 - p}, \qquad m_i \sim \text{Bernoulli}(1-p)$$
 
 **Inference:** return `x` unchanged.
 
 ### Rules
-- Signature: `MyDropout(rate, *, rngs)`
+- Signature: `MyDropout(p, *, rngs)`
 - `__call__(x, deterministic=False)`
 - Draw the mask from the `dropout` rng stream: `self.rngs.dropout()`
 - Each call must use a **fresh** key — two training calls must give different masks
-- `rate == 0.0` must be an exact no-op
+- `p == 0.0` must be an exact no-op
 - `deterministic=True` returns `x` unchanged, with **no** scaling
 
 ### Why divide during training
@@ -74,7 +74,7 @@ from flax import nnx
 class MyDropout(nnx.Module):
     """Inverted dropout."""
 
-    def __init__(self, rate: float, *, rngs: nnx.Rngs):
+    def __init__(self, p: float, *, rngs: nnx.Rngs):
         pass  # Replace this
 
     def __call__(self, x, deterministic: bool = False):
@@ -86,8 +86,8 @@ from flax import nnx
 
 
 class MyDropout(nnx.Module):
-    def __init__(self, rate: float, *, rngs: nnx.Rngs):
-        self.rate = rate
+    def __init__(self, p: float, *, rngs: nnx.Rngs):
+        self.rate = p
         self.rngs = rngs
 
     def __call__(self, x, deterministic: bool = False):
@@ -127,7 +127,7 @@ out = drop(x)
 assert out.shape == x.shape, f'Shape mismatch: {out.shape}'
 
 frac_zero = float(jnp.mean(out == 0.0))
-assert 0.4 < frac_zero < 0.6, f'About half should be dropped at rate=0.5, got {frac_zero:.3f}'
+assert 0.4 < frac_zero < 0.6, f'About half should be dropped at p=0.5, got {frac_zero:.3f}'
 
 survivors = out[out != 0.0]
 assert jnp.allclose(survivors, 2.0, atol=1e-5), (
@@ -142,13 +142,13 @@ assert jnp.allclose(survivors, 2.0, atol=1e-5), (
 import jax.numpy as jnp
 from flax import nnx
 
-for rate in [0.1, 0.3, 0.5, 0.8]:
-    drop = {fn}(rate, rngs=nnx.Rngs(dropout=0))
+for p in [0.1, 0.3, 0.5, 0.8]:
+    drop = {fn}(p, rngs=nnx.Rngs(dropout=0))
     x = jnp.ones((200, 200))
     m = float(jnp.mean(drop(x)))
     assert abs(m - 1.0) < 0.05, (
-        f'rate={rate}: mean of the output is {m:.4f}, expected ~1.0. '
-        'Divide the survivors by (1 - rate).'
+        f'p={p}: mean of the output is {m:.4f}, expected ~1.0. '
+        'Divide the survivors by (1 - p).'
     )
 """,
         },
@@ -210,7 +210,7 @@ assert not jnp.array_equal(d1(x), d3(x)), 'Different seeds must produce differen
 """,
         },
         {
-            "name": "rate=0 is a no-op",
+            "name": "p=0 is a no-op",
             "code": """
 import jax
 import jax.numpy as jnp
@@ -220,8 +220,8 @@ drop = {fn}(0.0, rngs=nnx.Rngs(dropout=0))
 x = jax.random.normal(jax.random.key(1), (10, 10))
 
 out = drop(x)
-assert jnp.allclose(out, x, atol=1e-6), f'rate=0 must leave x unchanged'
-assert not (out == 0.0).any() or (x == 0.0).any(), 'Nothing should be dropped at rate=0'
+assert jnp.allclose(out, x, atol=1e-6), f'p=0 must leave x unchanged'
+assert not (out == 0.0).any() or (x == 0.0).any(), 'Nothing should be dropped at p=0'
 """,
         },
         {
@@ -245,7 +245,7 @@ g = nnx.grad(lambda m, v: jnp.sum(m(v)), argnums=1)(drop2, x)
 assert g.shape == x.shape, f'Gradient shape {g.shape} vs {x.shape}'
 assert jnp.isfinite(g).all(), 'Non-finite gradient'
 assert jnp.allclose(g[~dropped], 2.0, atol=1e-5), (
-    f'Surviving positions should have gradient 1/(1-rate) = 2.0, got {g[~dropped][:5]}'
+    f'Surviving positions should have gradient 1/(1-p) = 2.0, got {g[~dropped][:5]}'
 )
 assert jnp.allclose(g[dropped], 0.0, atol=1e-6), 'Dropped positions must have zero gradient'
 """,

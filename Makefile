@@ -22,6 +22,7 @@ help:
 	@echo "  make verify       Run every task's reference solution against its tests"
 	@echo "  make probe        Attack each test suite with wrong implementations"
 	@echo "  make align        Assert the 41 ported problems still match the original"
+	@echo "                    (names, difficulty, numbers AND callable signatures)"
 	@echo "  make smoke        Execute the notebooks in a real Jupyter kernel"
 	@echo "  make check        verify + probe + align + notebooks --check (what CI runs)"
 	@echo ""
@@ -61,6 +62,7 @@ verify:
 
 align:
 	$(PYTHON) scripts/check_alignment.py
+	$(PYTHON) scripts/check_signatures.py
 
 probe:
 	$(PYTHON) scripts/probe_tests.py

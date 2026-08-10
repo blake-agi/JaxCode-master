@@ -22,7 +22,7 @@ Implement the standard **LLM sampling head**: temperature scaling, top-k
 truncation, top-p (nucleus) truncation, and a single categorical draw.
 
 ```python
-def sample_top_k_top_p(key, logits, *, temperature=1.0, top_k=None, top_p=1.0):
+def sample_top_k_top_p(key, logits, *, top_k=None, top_p=1.0, temperature=1.0):
     ...  # -> scalar int32 token id
 ```
 
@@ -79,7 +79,7 @@ should be able to say why.
 import jax.numpy as jnp
 
 
-def sample_top_k_top_p(key, logits, *, temperature=1.0, top_k=None, top_p=1.0):
+def sample_top_k_top_p(key, logits, *, top_k=None, top_p=1.0, temperature=1.0):
     """Draw one token id from a filtered categorical distribution.
 
     Args:
@@ -98,7 +98,7 @@ def sample_top_k_top_p(key, logits, *, temperature=1.0, top_k=None, top_p=1.0):
 import jax.numpy as jnp
 
 
-def sample_top_k_top_p(key, logits, *, temperature=1.0, top_k=None, top_p=1.0):
+def sample_top_k_top_p(key, logits, *, top_k=None, top_p=1.0, temperature=1.0):
     logits = jnp.asarray(logits, dtype=jnp.float32)
     V = logits.shape[-1]
 

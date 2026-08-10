@@ -29,7 +29,7 @@ Return the **loss**, i.e. $-L^{\text{CLIP}}$, averaged over all elements
 
 ### Signature
 ```python
-def ppo_loss(new_logps, old_logps, advantages, clip_eps=0.2, mask=None):
+def ppo_loss(new_logps, old_logps, advantages, clip_ratio=0.2, mask=None):
     ...  # -> scalar loss
 ```
 
@@ -74,14 +74,14 @@ gradient.
 import jax.numpy as jnp
 
 
-def ppo_loss(new_logps, old_logps, advantages, clip_eps=0.2, mask=None):
+def ppo_loss(new_logps, old_logps, advantages, clip_ratio=0.2, mask=None):
     """PPO clipped surrogate loss.
 
     Args:
         new_logps:  (batch, seq) log-probs under the current policy
         old_logps:  (batch, seq) log-probs under the sampling policy
         advantages: (batch, seq) advantage estimates
-        clip_eps:   clipping range epsilon
+        clip_ratio:   clipping range epsilon
         mask:       optional (batch, seq) of 1.0 real / 0.0 padding
 
     Returns:
@@ -93,12 +93,12 @@ def ppo_loss(new_logps, old_logps, advantages, clip_eps=0.2, mask=None):
 import jax.numpy as jnp
 
 
-def ppo_loss(new_logps, old_logps, advantages, clip_eps=0.2, mask=None):
+def ppo_loss(new_logps, old_logps, advantages, clip_ratio=0.2, mask=None):
     # Probability ratio, formed in log space so nothing overflows.
     ratio = jnp.exp(new_logps - old_logps)
 
     unclipped = ratio * advantages
-    clipped = jnp.clip(ratio, 1.0 - clip_eps, 1.0 + clip_eps) * advantages
+    clipped = jnp.clip(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio) * advantages
 
     # Pessimistic bound: take the WORSE of the two signed products.
     surrogate = jnp.minimum(unclipped, clipped)
@@ -279,7 +279,7 @@ new = jax.random.normal(k[0], (4, 5)) * 0.2
 old = jax.random.normal(k[1], (4, 5)) * 0.2
 adv = jax.random.normal(k[2], (4, 5))
 
-jitted = jax.jit(functools.partial({fn}, clip_eps=0.2))
+jitted = jax.jit(functools.partial({fn}, clip_ratio=0.2))
 assert jnp.allclose(jitted(new, old, adv), {fn}(new, old, adv, 0.2), atol=1e-6), (
     'jit changes the result'
 )

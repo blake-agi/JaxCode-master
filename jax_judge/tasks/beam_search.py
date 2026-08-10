@@ -23,12 +23,12 @@ Implement **beam search** over a black-box scoring function, ranked by
 length-normalised log-probability.
 
 ```python
-def beam_search(score_fn, start_token, max_len, beam_width, eos_token,
+def beam_search(log_prob_fn, start_token, max_len, beam_width, eos_token,
                 length_penalty=1.0):
     ...  # -> list[int], the best sequence, starting with start_token
 ```
 
-`score_fn(tokens)` receives the sequence decoded so far (including
+`log_prob_fn(tokens)` receives the sequence decoded so far (including
 `start_token`) and returns a `(V,)` array of log-probabilities for the **next**
 token. Read `V` off that first call — do not assume it.
 
@@ -91,12 +91,12 @@ import jax
 import jax.numpy as jnp
 
 
-def beam_search(score_fn, start_token, max_len, beam_width, eos_token,
+def beam_search(log_prob_fn, start_token, max_len, beam_width, eos_token,
                 length_penalty=1.0):
-    """Decode the best sequence under score_fn with a beam of beam_width.
+    """Decode the best sequence under log_prob_fn with a beam of beam_width.
 
     Args:
-        score_fn:       callable, tokens-so-far -> (V,) next-token log-probs
+        log_prob_fn:       callable, tokens-so-far -> (V,) next-token log-probs
         start_token:    int, the first token of every hypothesis
         max_len:        int, maximum total sequence length (incl. start_token)
         beam_width:     int, number of live hypotheses kept per step
@@ -114,7 +114,7 @@ import jax
 import jax.numpy as jnp
 
 
-def beam_search(score_fn, start_token, max_len, beam_width, eos_token,
+def beam_search(log_prob_fn, start_token, max_len, beam_width, eos_token,
                 length_penalty=1.0):
     start_token, eos_token = int(start_token), int(eos_token)
 
@@ -127,7 +127,7 @@ def beam_search(score_fn, start_token, max_len, beam_width, eos_token,
             break
 
         # (n_live, V): every beam's running score broadcast over the vocabulary.
-        logps = jnp.stack([jnp.asarray(score_fn(t)) for t in live_toks])
+        logps = jnp.stack([jnp.asarray(log_prob_fn(t)) for t in live_toks])
         totals = logps + jnp.asarray(live_scores, dtype=logps.dtype)[:, None]
         n_live, V = totals.shape
 
@@ -162,7 +162,7 @@ def beam_search(score_fn, start_token, max_len, beam_width, eos_token,
 
 # A toy model: token 1 is a safe-but-mediocre step, token 2 is a gamble that
 # pays off, token 3 is eos.
-def score_fn(tokens):
+def log_prob_fn(tokens):
     lp = jnp.full((4,), -100.0)
     if len(tokens) == 1:
         lp = lp.at[1].set(-0.5).at[2].set(-0.9)
@@ -175,8 +175,8 @@ def score_fn(tokens):
     return lp
 
 
-print("greedy   (width 1):", beam_search(score_fn, 0, 4, 1, 3))
-print("beam     (width 2):", beam_search(score_fn, 0, 4, 2, 3))
+print("greedy   (width 1):", beam_search(log_prob_fn, 0, 4, 1, 3))
+print("beam     (width 2):", beam_search(log_prob_fn, 0, 4, 2, 3))
 print("-> greedy commits to the locally better token 1 and pays for it later")
 
 
@@ -214,13 +214,13 @@ assert len(out) >= 1 and int(out[0]) == 1, f'Sequence must start with start_toke
 assert len(out) <= 3, f'Sequence longer than max_len=3: {out}'
 assert all(0 <= int(t) < 3 for t in out), f'Token out of vocabulary range: {out}'
 
-assert calls, 'score_fn was never called'
+assert calls, 'log_prob_fn was never called'
 assert calls[0] == (1,), (
-    f'The first score_fn call must receive just (start_token,), got {calls[0]}'
+    f'The first log_prob_fn call must receive just (start_token,), got {calls[0]}'
 )
-assert all(c[0] == 1 for c in calls), 'Every score_fn call must include start_token first'
+assert all(c[0] == 1 for c in calls), 'Every log_prob_fn call must include start_token first'
 assert all(2 not in c[1:] for c in calls), (
-    'score_fn was called on a sequence that already contains eos — finished '
+    'log_prob_fn was called on a sequence that already contains eos — finished '
     'hypotheses must never be extended'
 )
 """,

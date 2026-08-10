@@ -7,30 +7,30 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "MyEmbedding",
     "hint": (
-        "The forward pass is one line: self.table[ids]. JAX's advanced indexing "
-        "handles any shape of ids and appends the feature axis, so (B, T) ids "
-        "gives (B, T, features) with no reshaping. For attend(), project back "
+        "The forward pass is one line: self.table[indices]. JAX's advanced indexing "
+        "handles any shape of indices and appends the feature axis, so (B, T) indices "
+        "gives (B, T, embedding_dim) with no reshaping. For attend(), project back "
         "with x @ self.table.T."
     ),
     "description": r"""
 Implement an **embedding table** as an `nnx.Module`.
 
-Map integer token ids to dense vectors: `(...) -> (..., features)`.
+Map integer token indices to dense vectors: `(...) -> (..., embedding_dim)`.
 
 ### Rules
-- Signature: `MyEmbedding(num_embeddings, features, *, rngs)`
-- Table stored as `self.table`, an `nnx.Param` of shape `(num_embeddings, features)`
+- Signature: `MyEmbedding(num_embeddings, embedding_dim, *, rngs)`
+- Table stored as `self.table`, an `nnx.Param` of shape `(num_embeddings, embedding_dim)`
 - Initialise with `jax.random.normal(...) * 0.02` (the GPT-2 convention)
-- `__call__(ids)` accepts **any** shape of integer ids
-- Also implement `attend(x)`: `(..., features) -> (..., num_embeddings)`,
+- `__call__(indices)` accepts **any** shape of integer indices
+- Also implement `attend(x)`: `(..., embedding_dim) -> (..., num_embeddings)`,
   the transpose projection used for weight tying
 
 ### Indexing vs one-hot
 These compute the same thing:
 
 ```python
-table[ids]                        # gather
-jax.nn.one_hot(ids, V) @ table    # matmul
+table[indices]                        # gather
+jax.nn.one_hot(indices, V) @ table    # matmul
 ```
 
 The gather is `O(1)` per token; the matmul is `O(V)` per token and materialises a
@@ -41,7 +41,7 @@ vocabularies, and it is how you'd explain the *gradient*.)
 
 ### Why the gradient is sparse
 `d(loss)/d(table)` is nonzero only at the rows you actually looked up, and
-repeated ids **accumulate**. JAX handles this correctly through
+repeated indices **accumulate**. JAX handles this correctly through
 `.at[].add()` semantics under the hood — but it produces a *dense* gradient array
 with mostly zeros, which is why large-vocabulary models want sparse optimizer
 support.
@@ -57,17 +57,17 @@ from flax import nnx
 
 
 class MyEmbedding(nnx.Module):
-    """Integer ids -> dense vectors."""
+    """Integer indices -> dense vectors."""
 
-    def __init__(self, num_embeddings: int, features: int, *, rngs: nnx.Rngs):
+    def __init__(self, num_embeddings: int, embedding_dim: int, *, rngs: nnx.Rngs):
         pass  # Replace this
 
-    def __call__(self, ids):
-        """(...) integer ids -> (..., features)"""
+    def __call__(self, indices):
+        """(...) integer indices -> (..., embedding_dim)"""
         pass  # Replace this
 
     def attend(self, x):
-        """(..., features) -> (..., num_embeddings). Transpose projection."""
+        """(..., embedding_dim) -> (..., num_embeddings). Transpose projection."""
         pass  # Replace this
 ''',
     "solution": '''import jax
@@ -76,18 +76,18 @@ from flax import nnx
 
 
 class MyEmbedding(nnx.Module):
-    def __init__(self, num_embeddings: int, features: int, *, rngs: nnx.Rngs):
+    def __init__(self, num_embeddings: int, embedding_dim: int, *, rngs: nnx.Rngs):
         key = rngs.params()
         self.table = nnx.Param(
-            jax.random.normal(key, (num_embeddings, features)) * 0.02
+            jax.random.normal(key, (num_embeddings, embedding_dim)) * 0.02
         )
         self.num_embeddings = num_embeddings
-        self.features = features
+        self.features = embedding_dim
 
-    def __call__(self, ids):
+    def __call__(self, indices):
         # A gather, not a one-hot matmul. Advanced indexing already handles
         # arbitrary leading shapes.
-        return self.table[ids]
+        return self.table[indices]
 
     def attend(self, x):
         # Weight tying: reuse the same matrix for the output projection.
@@ -100,8 +100,8 @@ emb = MyEmbedding(100, 8, rngs=nnx.Rngs(params=0))
 
 print("table:", emb.table.shape)
 print("scalar id  ->", emb(jnp.array(5)).shape)
-print("(3,) ids   ->", emb(jnp.array([1, 2, 3])).shape)
-print("(2,4) ids  ->", emb(jnp.zeros((2, 4), dtype=jnp.int32)).shape)
+print("(3,) indices   ->", emb(jnp.array([1, 2, 3])).shape)
+print("(2,4) indices  ->", emb(jnp.zeros((2, 4), dtype=jnp.int32)).shape)
 print("attend     ->", emb.attend(jnp.ones((2, 4, 8))).shape)
 ''',
     "tests": [
@@ -128,11 +128,11 @@ from flax import nnx
 
 emb = {fn}(50, 8, rngs=nnx.Rngs(params=0))
 
-assert emb(jnp.array(3)).shape == (8,), 'Scalar id should give (features,)'
-assert emb(jnp.array([1, 2, 3])).shape == (3, 8), '(3,) ids should give (3, 8)'
+assert emb(jnp.array(3)).shape == (8,), 'Scalar id should give (embedding_dim,)'
+assert emb(jnp.array([1, 2, 3])).shape == (3, 8), '(3,) indices should give (3, 8)'
 
-ids = jnp.zeros((2, 4), dtype=jnp.int32)
-assert emb(ids).shape == (2, 4, 8), f'(2, 4) ids should give (2, 4, 8), got {emb(ids).shape}'
+indices = jnp.zeros((2, 4), dtype=jnp.int32)
+assert emb(indices).shape == (2, 4, 8), f'(2, 4) indices should give (2, 4, 8), got {emb(indices).shape}'
 
 ids3 = jnp.zeros((2, 3, 4), dtype=jnp.int32)
 assert emb(ids3).shape == (2, 3, 4, 8), f'{emb(ids3).shape}'
@@ -147,8 +147,8 @@ from flax import nnx
 emb = {fn}(10, 4, rngs=nnx.Rngs(params=0))
 table = emb.table[...]
 
-ids = jnp.array([0, 5, 9, 5])
-out = emb(ids)
+indices = jnp.array([0, 5, 9, 5])
+out = emb(indices)
 
 assert jnp.allclose(out[0], table[0], atol=1e-6), 'Row 0 mismatch'
 assert jnp.allclose(out[1], table[5], atol=1e-6), 'Row 5 mismatch'
@@ -164,10 +164,10 @@ import jax.numpy as jnp
 from flax import nnx
 
 emb = {fn}(20, 6, rngs=nnx.Rngs(params=0))
-ids = jax.random.randint(jax.random.key(0), (3, 5), 0, 20)
+indices = jax.random.randint(jax.random.key(0), (3, 5), 0, 20)
 
-gathered = emb(ids)
-one_hot = jax.nn.one_hot(ids, 20) @ emb.table[...]
+gathered = emb(indices)
+one_hot = jax.nn.one_hot(indices, 20) @ emb.table[...]
 
 assert jnp.allclose(gathered, one_hot, atol=1e-5), (
     'Gather must equal the one-hot matmul'
@@ -204,9 +204,9 @@ import jax.numpy as jnp
 from flax import nnx
 
 emb = {fn}(10, 4, rngs=nnx.Rngs(params=0))
-ids = jnp.array([2, 2, 7])
+indices = jnp.array([2, 2, 7])
 
-grads = nnx.grad(lambda m: jnp.sum(m(ids)))(emb)
+grads = nnx.grad(lambda m: jnp.sum(m(indices)))(emb)
 g = jax.tree.leaves(grads)[0]
 
 assert g.shape == (10, 4), f'Gradient shape {g.shape} vs (10, 4)'
