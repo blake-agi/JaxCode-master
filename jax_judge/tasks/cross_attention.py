@@ -9,8 +9,8 @@ TASK = {
     "hint": (
         "Same four nnx.Linear(d_model, d_model) as self-attention. The only "
         "change is where each projection reads from: W_q sees x_q, while W_k and "
-        "W_v both see x_kv. Read S_q off x_q and S_kv off x_kv separately — the "
-        "score matrix is (S_q, S_kv) and is generally not square. The output "
+        "W_v both see x_kv. Read seq_q off x_q and seq_kv off x_kv separately — the "
+        "score matrix is (seq_q, seq_kv) and is generally not square. The output "
         "length always follows the QUERY."
     ),
     "description": r"""
@@ -30,8 +30,8 @@ class MultiHeadCrossAttention(nnx.Module):
 ### Requirements
 - Use `nnx.Linear(d_model, d_model)` for `self.W_q`, `self.W_k`, `self.W_v`, `self.W_o`
 - `self.d_k = d_model // num_heads`
-- `x_q` is `(B, S_q, d_model)`, `x_kv` is `(B, S_kv, d_model)`
-- Output is `(B, S_q, d_model)` — the **query** length
+- `x_q` is `(B, seq_q, d_model)`, `x_kv` is `(B, seq_kv, d_model)`
+- Output is `(B, seq_q, d_model)` — the **query** length
 
 ### Self-attention vs cross-attention
 Structurally they are the same computation; the difference is entirely in what
@@ -57,7 +57,7 @@ scaling, the softmax axis — is unchanged.
 Each query position produces exactly one output row, no matter how many keys it
 attended over. That is what lets cross-attention consume a context of a
 completely different length — a 1000-token document can condition a 10-token
-generation, and the cost is $O(S_q S_{kv})$ rather than anything quadratic in
+generation, and the cost is $O(seq_q S_{kv})$ rather than anything quadratic in
 the larger one alone.
 
 ### The trap
@@ -76,7 +76,7 @@ class MultiHeadCrossAttention(nnx.Module):
         pass  # Replace this
 
     def __call__(self, x_q, x_kv):
-        """(B, S_q, d_model), (B, S_kv, d_model) -> (B, S_q, d_model)"""
+        """(B, seq_q, d_model), (B, seq_kv, d_model) -> (B, seq_q, d_model)"""
         pass  # Replace this
 ''',
     "solution": '''import jax
@@ -94,17 +94,17 @@ class MultiHeadCrossAttention(nnx.Module):
         self.W_v = nnx.Linear(d_model, d_model, rngs=rngs)
         self.W_o = nnx.Linear(d_model, d_model, rngs=rngs)
 
-    def _split(self, t, B, S):
-        return t.reshape(B, S, self.num_heads, self.d_k).transpose(0, 2, 1, 3)
+    def _split(self, t, B, seq):
+        return t.reshape(B, seq, self.num_heads, self.d_k).transpose(0, 2, 1, 3)
 
     def __call__(self, x_q, x_kv):
-        B, S_q, _ = x_q.shape
-        S_kv = x_kv.shape[1]        # read separately — the two can differ
+        B, seq_q, _ = x_q.shape
+        seq_kv = x_kv.shape[1]        # read separately — the two can differ
 
         # The ONLY difference from self-attention: q reads x_q, k/v read x_kv.
-        q = self._split(self.W_q(x_q), B, S_q)
-        k = self._split(self.W_k(x_kv), B, S_kv)
-        v = self._split(self.W_v(x_kv), B, S_kv)
+        q = self._split(self.W_q(x_q), B, seq_q)
+        k = self._split(self.W_k(x_kv), B, seq_kv)
+        v = self._split(self.W_v(x_kv), B, seq_kv)
 
         # == q @ jnp.swapaxes(k, -1, -2)
         scores = jnp.einsum("bhqd,bhkd->bhqk", q, k) / jnp.sqrt(
@@ -113,7 +113,7 @@ class MultiHeadCrossAttention(nnx.Module):
         weights = jax.nn.softmax(scores, axis=-1)
         attn = jnp.einsum("bhqk,bhkd->bhqd", weights, v)     # == weights @ v
 
-        return self.W_o(attn.transpose(0, 2, 1, 3).reshape(B, S_q, -1))
+        return self.W_o(attn.transpose(0, 2, 1, 3).reshape(B, seq_q, -1))
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
@@ -159,12 +159,12 @@ import jax.numpy as jnp
 from flax import nnx
 
 m = {fn}(16, 2, rngs=nnx.Rngs(params=3))
-for S_q, S_kv in ((3, 11), (11, 3), (1, 7), (6, 6)):
-    q = jax.random.normal(jax.random.key(4), (2, S_q, 16))
-    kv = jax.random.normal(jax.random.key(5), (2, S_kv, 16))
+for seq_q, seq_kv in ((3, 11), (11, 3), (1, 7), (6, 6)):
+    q = jax.random.normal(jax.random.key(4), (2, seq_q, 16))
+    kv = jax.random.normal(jax.random.key(5), (2, seq_kv, 16))
     out = m(q, kv)
-    assert out.shape == (2, S_q, 16), (
-        f'S_q={S_q}, S_kv={S_kv}: got {out.shape}, expected (2, {S_q}, 16). '
+    assert out.shape == (2, seq_q, 16), (
+        f'seq_q={seq_q}, seq_kv={seq_kv}: got {out.shape}, expected (2, {seq_q}, 16). '
         'The output must follow the query, not the context.'
     )
 """,
@@ -179,13 +179,13 @@ from flax import nnx
 m = {fn}(16, 4, rngs=nnx.Rngs(params=6))
 x = jax.random.normal(jax.random.key(7), (2, 6, 16))
 
-B, S, H, d_k = 2, 6, 4, 4
+B, seq, H, d_k = 2, 6, 4, 4
 def split(t):
-    return t.reshape(B, S, H, d_k).transpose(0, 2, 1, 3)
+    return t.reshape(B, seq, H, d_k).transpose(0, 2, 1, 3)
 q, k, v = split(m.W_q(x)), split(m.W_k(x)), split(m.W_v(x))
 s = jnp.einsum("bhqd,bhkd->bhqk", q, k) / jnp.sqrt(jnp.asarray(d_k, x.dtype))
 a = jnp.einsum("bhqk,bhkd->bhqd", jax.nn.softmax(s, axis=-1), v)
-ref = m.W_o(a.transpose(0, 2, 1, 3).reshape(B, S, -1))
+ref = m.W_o(a.transpose(0, 2, 1, 3).reshape(B, seq, -1))
 
 assert jnp.allclose(m(x, x), ref, atol=1e-5), 'cross(x, x) must equal self-attention'
 """,

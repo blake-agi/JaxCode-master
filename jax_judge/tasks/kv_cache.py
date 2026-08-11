@@ -10,9 +10,9 @@ TASK = {
         "Project q/k/v from the NEW tokens only, then concatenate the cached k/v "
         "onto the front along the sequence axis before computing scores. Queries "
         "are always just the new positions, keys and values are the whole "
-        "history — so the score matrix is (S_new, S_total), not square. During "
-        "prefill (S_new > 1) you still need a causal mask, and it has to be "
-        "offset by S_past = S_total - S_new. Single-token decode needs no mask "
+        "history — so the score matrix is (seq_new, seq_total), not square. During "
+        "prefill (seq_new > 1) you still need a causal mask, and it has to be "
+        "offset by seq_past = seq_total - seq_new. Single-token decode needs no mask "
         "at all: one query can see the entire past legitimately."
     ),
     "description": r"""
@@ -25,15 +25,15 @@ class KVCacheAttention(nnx.Module):
     def __call__(self, x, cache=None): ...   # -> (out, new_cache)
 ```
 
-- `x`: `(B, S_new, d_model)` — only the **new** tokens
-- `cache`: `None`, or `(k, v)` each `(B, H, S_past, d_k)`
-- returns `out` of shape `(B, S_new, d_model)` and the updated `(k, v)`
+- `x`: `(B, seq_new, d_model)` — only the **new** tokens
+- `cache`: `None`, or `(k, v)` each `(B, H, seq_past, d_k)`
+- returns `out` of shape `(B, seq_new, d_model)` and the updated `(k, v)`
 
 ### Requirements
 - Four `nnx.Linear(d_model, d_model)` layers: `W_q`, `W_k`, `W_v`, `W_o`
 - Concatenate the cached `k`/`v` along the **sequence** axis
 - Scale by $1/\sqrt{d_k}$
-- Causal mask when `S_new > 1`, offset by `S_past`
+- Causal mask when `seq_new > 1`, offset by `seq_past`
 
 `nnx.Linear` is an allowed building block — the exercise is the cache, not the
 projection.
@@ -45,18 +45,18 @@ $O(n^2)$ per token and $O(n^3)$ overall. With a cache each step projects only
 the new token and appends, so generation is $O(n)$ per step.
 
 ### The mask offset — the part people get wrong
-During **decode** (`S_new == 1`) there is nothing to mask: the single query is
+During **decode** (`seq_new == 1`) there is nothing to mask: the single query is
 the newest position and may see everything before it.
 
-During **prefill** (`S_new > 1`) the score matrix is `(S_new, S_total)` and is
+During **prefill** (`seq_new > 1`) the score matrix is `(seq_new, seq_total)` and is
 **not square**. Query $i$ sits at absolute position $S_{past} + i$, so it may
 attend to key $j$ only when $j \le S_{past} + i$. That is a triangular mask
-shifted right by `S_past` — using an unshifted `triu` silently blocks the
+shifted right by `seq_past` — using an unshifted `triu` silently blocks the
 cached history and is the classic bug here.
 
 ### The memory arithmetic
 Cache size is
-$2 \times L \times B \times H_{kv} \times S \times d_k \times \text{bytes}$
+$2 \times L \times B \times H_{kv} \times seq \times d_k \times \text{bytes}$
 — the leading 2 is K and V, and $L$ is the layer count, which is easy to drop
 and worth a factor of 80.
 
@@ -87,7 +87,7 @@ class KVCacheAttention(nnx.Module):
         pass  # Replace this
 
     def __call__(self, x, cache=None):
-        """(B, S_new, d_model) + optional (k, v) -> (out, (k, v))"""
+        """(B, seq_new, d_model) + optional (k, v) -> (out, (k, v))"""
         pass  # Replace this
 ''',
     "solution": '''import jax
@@ -104,16 +104,16 @@ class KVCacheAttention(nnx.Module):
         self.W_v = nnx.Linear(d_model, d_model, rngs=rngs)
         self.W_o = nnx.Linear(d_model, d_model, rngs=rngs)
 
-    def _heads(self, t, B, S):
-        # (B, S, d_model) -> (B, H, S, d_k)
-        return t.reshape(B, S, self.num_heads, self.d_k).transpose(0, 2, 1, 3)
+    def _heads(self, t, B, seq):
+        # (B, seq, d_model) -> (B, H, seq, d_k)
+        return t.reshape(B, seq, self.num_heads, self.d_k).transpose(0, 2, 1, 3)
 
     def __call__(self, x, cache=None):
-        B, S_new, _ = x.shape
+        B, seq_new, _ = x.shape
 
-        q = self._heads(self.W_q(x), B, S_new)
-        k = self._heads(self.W_k(x), B, S_new)
-        v = self._heads(self.W_v(x), B, S_new)
+        q = self._heads(self.W_q(x), B, seq_new)
+        k = self._heads(self.W_k(x), B, seq_new)
+        v = self._heads(self.W_v(x), B, seq_new)
 
         # The cache is a VALUE we extend, not mutable state.
         if cache is not None:
@@ -121,26 +121,26 @@ class KVCacheAttention(nnx.Module):
             v = jnp.concatenate([cache[1], v], axis=2)
 
         new_cache = (k, v)
-        S_total = k.shape[2]
+        seq_total = k.shape[2]
 
         # == q @ jnp.swapaxes(k, -1, -2), written as a contraction.
         scores = jnp.einsum("bhtd,bhsd->bhts", q, k) / jnp.sqrt(
             jnp.asarray(self.d_k, x.dtype)
         )
 
-        if S_new > 1:
-            # Query i is at absolute position S_past + i, so the triangle is
-            # shifted right by S_past. Unshifted triu would hide the cache.
-            S_past = S_total - S_new
+        if seq_new > 1:
+            # Query i is at absolute position seq_past + i, so the triangle is
+            # shifted right by seq_past. Unshifted triu would hide the cache.
+            seq_past = seq_total - seq_new
             blocked = jnp.triu(
-                jnp.ones((S_new, S_total), dtype=bool), k=S_past + 1
+                jnp.ones((seq_new, seq_total), dtype=bool), k=seq_past + 1
             )
             scores = jnp.where(blocked, -jnp.inf, scores)
 
         weights = jax.nn.softmax(scores, axis=-1)
         attn = jnp.einsum("bhts,bhsd->bhtd", weights, v)   # == weights @ v
 
-        merged = attn.transpose(0, 2, 1, 3).reshape(B, S_new, -1)
+        merged = attn.transpose(0, 2, 1, 3).reshape(B, seq_new, -1)
         return self.W_o(merged), new_cache
 ''',
     "demo": '''import jax
@@ -218,7 +218,7 @@ assert jnp.allclose(inc, ref, atol=1e-4), (
 """,
         },
         {
-            "name": "Prefill mask is offset by S_past",
+            "name": "Prefill mask is offset by seq_past",
             "code": """
 import jax
 import jax.numpy as jnp
@@ -228,7 +228,7 @@ m = {fn}(16, 2, rngs=nnx.Rngs(params=5))
 full = jax.random.normal(jax.random.key(6), (1, 8, 16))
 ref, _ = m(full)
 
-# Prefill 4, then prefill 4 MORE at once (S_new=4 with S_past=4). An unshifted
+# Prefill 4, then prefill 4 MORE at once (seq_new=4 with seq_past=4). An unshifted
 # triangular mask would wrongly hide the first four cached positions.
 out1, cache = m(full[:, :4])
 out2, _ = m(full[:, 4:], cache)
@@ -236,7 +236,7 @@ joined = jnp.concatenate([out1, out2], axis=1)
 
 assert jnp.allclose(joined, ref, atol=1e-4), (
     'Chunked prefill disagrees with the one-shot pass. The mask for a '
-    '(S_new, S_total) score matrix must start its diagonal at S_past + 1.'
+    '(seq_new, seq_total) score matrix must start its diagonal at seq_past + 1.'
 )
 """,
         },
@@ -276,7 +276,7 @@ tok = jax.random.normal(jax.random.key(11), (1, 1, 16))
 out, _ = m(tok, cache)
 
 assert jnp.isfinite(out).all(), (
-    'Non-finite output on single-token decode — a mask was applied when S_new=1, '
+    'Non-finite output on single-token decode — a mask was applied when seq_new=1, '
     'and masking the only query row leaves softmax with all -inf'
 )
 """,

@@ -65,10 +65,6 @@ ALLOWED: dict[str, dict[str, str]] = {
         "mask": "optional mask added so the same function serves the masked "
                 "cases; the original's 3-arg call still works unchanged",
     },
-    "causal_attention": {"Q": "lowercase q/k/v per PEP8 and JAX convention"},
-    "linear_attention": {"Q": "lowercase q/k/v per PEP8 and JAX convention"},
-    "flash_attention": {"Q": "lowercase q/k/v per PEP8 and JAX convention"},
-    "sliding_window": {"Q": "lowercase q/k/v per PEP8 and JAX convention"},
     # --- JAX naming and JAX-forced arguments
     "softmax": {
         "dim": "jnp reductions take `axis`, not `dim`; using dim would be "

@@ -8,9 +8,9 @@ TASK = {
     "function_name": "MultiHeadAttention",
     "hint": (
         "Four nnx.Linear(d_model, d_model) layers. Project, then reshape "
-        "(B, S, d_model) -> (B, S, H, d_k) and transpose to (B, H, S, d_k) so "
+        "(B, seq, d_model) -> (B, seq, H, d_k) and transpose to (B, H, seq, d_k) so "
         "the heads become a batch axis. Q and K/V may have DIFFERENT sequence "
-        "lengths — read S_q off Q and S_k off K — which is what makes the same "
+        "lengths — read seq_q off Q and seq_k off K — which is what makes the same "
         "class work for cross-attention. Merge the heads back with the inverse "
         "transpose-then-reshape before the output projection."
     ),
@@ -40,8 +40,8 @@ the projection. It also brings its own initialization.
 
 ### Heads are a reshape, not a loop
 The whole trick is that $H$ separate attention computations are one batched
-computation. `(B, S, d_model)` reshapes to `(B, S, H, d_k)` and transposes to
-`(B, H, S, d_k)`, after which the head axis is just another batch axis and the
+computation. `(B, seq, d_model)` reshapes to `(B, seq, H, d_k)` and transposes to
+`(B, H, seq, d_k)`, after which the head axis is just another batch axis and the
 same einsum handles all of them. Nothing is looped, and the parameter count is
 identical to single-head attention with the same `d_model` — you are
 partitioning the projection, not adding to it.
@@ -53,9 +53,9 @@ cross-attention (`mha(decoder, encoder, encoder)`), which is exactly how an
 encoder-decoder transformer reuses one implementation.
 
 ### The trap
-It is tempting to read a single `S` off `Q` and use it for `K` too. That works
+It is tempting to read a single `seq` off `Q` and use it for `K` too. That works
 for every self-attention test and then fails the moment the sequence lengths
-differ — so the score matrix is `(S_q, S_k)`, not square.
+differ — so the score matrix is `(seq_q, seq_k)`, not square.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -63,7 +63,7 @@ from flax import nnx
 
 
 class MultiHeadAttention(nnx.Module):
-    """Multi-head attention over (B, S, d_model)."""
+    """Multi-head attention over (B, seq, d_model)."""
 
     def __init__(self, d_model: int, num_heads: int, *, rngs: nnx.Rngs):
         pass  # Replace this
@@ -87,17 +87,17 @@ class MultiHeadAttention(nnx.Module):
         self.W_v = nnx.Linear(d_model, d_model, rngs=rngs)
         self.W_o = nnx.Linear(d_model, d_model, rngs=rngs)
 
-    def _split(self, t, B, S):
-        # (B, S, d_model) -> (B, H, S, d_k): heads become a batch axis.
-        return t.reshape(B, S, self.num_heads, self.d_k).transpose(0, 2, 1, 3)
+    def _split(self, t, B, seq):
+        # (B, seq, d_model) -> (B, H, seq, d_k): heads become a batch axis.
+        return t.reshape(B, seq, self.num_heads, self.d_k).transpose(0, 2, 1, 3)
 
     def __call__(self, Q, K, V):
-        B, S_q, _ = Q.shape
-        S_k = K.shape[1]        # NOT S_q — this is what allows cross-attention
+        B, seq_q, _ = Q.shape
+        seq_k = K.shape[1]        # NOT seq_q — this is what allows cross-attention
 
-        q = self._split(self.W_q(Q), B, S_q)
-        k = self._split(self.W_k(K), B, S_k)
-        v = self._split(self.W_v(V), B, S_k)
+        q = self._split(self.W_q(Q), B, seq_q)
+        k = self._split(self.W_k(K), B, seq_k)
+        v = self._split(self.W_v(V), B, seq_k)
 
         # == q @ jnp.swapaxes(k, -1, -2)
         scores = jnp.einsum("bhqd,bhkd->bhqk", q, k) / jnp.sqrt(
@@ -106,7 +106,7 @@ class MultiHeadAttention(nnx.Module):
         weights = jax.nn.softmax(scores, axis=-1)
         attn = jnp.einsum("bhqk,bhkd->bhqd", weights, v)      # == weights @ v
 
-        out = attn.transpose(0, 2, 1, 3).reshape(B, S_q, -1)
+        out = attn.transpose(0, 2, 1, 3).reshape(B, seq_q, -1)
         return self.W_o(out)
 ''',
     "demo": '''import jax
@@ -176,13 +176,13 @@ Q = jax.random.normal(jax.random.key(6), (2, 5, 16))
 K = jax.random.normal(jax.random.key(7), (2, 7, 16))
 V = jax.random.normal(jax.random.key(8), (2, 7, 16))
 
-B, S_q, S_k, H, d_k = 2, 5, 7, 4, 4
-def split(t, S):
-    return t.reshape(B, S, H, d_k).transpose(0, 2, 1, 3)
-q, k, v = split(m.W_q(Q), S_q), split(m.W_k(K), S_k), split(m.W_v(V), S_k)
+B, seq_q, seq_k, H, d_k = 2, 5, 7, 4, 4
+def split(t, seq):
+    return t.reshape(B, seq, H, d_k).transpose(0, 2, 1, 3)
+q, k, v = split(m.W_q(Q), seq_q), split(m.W_k(K), seq_k), split(m.W_v(V), seq_k)
 scores = jnp.einsum("bhqd,bhkd->bhqk", q, k) / jnp.sqrt(jnp.asarray(d_k, Q.dtype))
 attn = jnp.einsum("bhqk,bhkd->bhqd", jax.nn.softmax(scores, axis=-1), v)
-ref = m.W_o(attn.transpose(0, 2, 1, 3).reshape(B, S_q, -1))
+ref = m.W_o(attn.transpose(0, 2, 1, 3).reshape(B, seq_q, -1))
 
 assert jnp.allclose(m(Q, K, V), ref, atol=1e-5), 'Output does not match the reference'
 """,

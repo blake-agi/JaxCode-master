@@ -9,7 +9,7 @@ TASK = {
     "hint": (
         "scores = Q @ jnp.swapaxes(K, -1, -2) / jnp.sqrt(Q.shape[-1]) — the "
         "swapaxes only touches the last two axes so the same code works for "
-        "(B, T, D) and (B, H, T, Dh). Apply the mask with "
+        "(B, seq, D) and (B, H, seq, Dh). Apply the mask with "
         "jnp.where(mask, scores, -1e9) BEFORE jax.nn.softmax(scores, axis=-1), "
         "then weights @ V. Note d_k comes from Q.shape[-1] (the key dim), not "
         "from V.shape[-1] — those two are allowed to differ."
@@ -24,18 +24,18 @@ $$\text{Attention}(Q, K, V) = \operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt
 
 | tensor | shape | notes |
 |---|---|---|
-| `Q` | `(B, T_q, d_k)` | queries |
-| `K` | `(B, T_k, d_k)` | keys — same feature dim as `Q` |
-| `V` | `(B, T_k, d_v)` | values — `d_v` may differ from `d_k` |
-| `mask` | broadcastable to `(..., T_q, T_k)` | boolean, `True` = **attend**, `False` = **block** |
-| returns | `(B, T_q, d_v)` | |
+| `Q` | `(B, seq_q, d_k)` | queries |
+| `K` | `(B, seq_k, d_k)` | keys — same feature dim as `Q` |
+| `V` | `(B, seq_k, d_v)` | values — `d_v` may differ from `d_k` |
+| `mask` | broadcastable to `(..., seq_q, seq_k)` | boolean, `True` = **attend**, `False` = **block** |
+| returns | `(B, seq_q, d_v)` | |
 
 ### Rules
 - No `jax.nn.dot_product_attention`, no `nnx.MultiHeadAttention`
 - `jax.nn.softmax` is allowed and encouraged (it subtracts the row max for you)
-- `T_q` and `T_k` are independent — do not assume a square score matrix
+- `seq_q` and `seq_k` are independent — do not assume a square score matrix
 - Only the **last two** axes are contracted, so the identical code must also
-  accept `(B, H, T, D_h)` inputs. Use `jnp.swapaxes(K, -1, -2)`, never a
+  accept `(B, H, seq, D_h)` inputs. Use `jnp.swapaxes(K, -1, -2)`, never a
   hard-coded `transpose(0, 2, 1)`
 - Masked positions are removed **before** the softmax, not zeroed after it
 
@@ -72,14 +72,14 @@ def scaled_dot_product_attention(Q, K, V, mask=None):
     """softmax(Q K^T / sqrt(d_k)) V
 
     Args:
-        Q:    (..., T_q, d_k)
-        K:    (..., T_k, d_k)
-        V:    (..., T_k, d_v)
-        mask: optional boolean array broadcastable to (..., T_q, T_k);
+        Q:    (..., seq_q, d_k)
+        K:    (..., seq_k, d_k)
+        V:    (..., seq_k, d_v)
+        mask: optional boolean array broadcastable to (..., seq_q, seq_k);
               True means "attend here", False means "block".
 
     Returns:
-        (..., T_q, d_v)
+        (..., seq_q, d_v)
     """
     pass  # Replace this
 ''',
@@ -91,7 +91,7 @@ def scaled_dot_product_attention(Q, K, V, mask=None):
     d_k = Q.shape[-1]
 
     # swapaxes(-1, -2) transposes only the last two axes, so this works for
-    # (B, T, D) and for (B, H, T, Dh) without changing a line.
+    # (B, seq, D) and for (B, H, seq, Dh) without changing a line.
     scores = (Q @ jnp.swapaxes(K, -1, -2)) / jnp.sqrt(jnp.asarray(d_k, Q.dtype))
 
     if mask is not None:
@@ -177,7 +177,7 @@ assert jnp.allclose(out, scaled, atol=1e-5), (
 import jax
 import jax.numpy as jnp
 
-# T_q != T_k and d_v != d_k must both be fine.
+# seq_q != seq_k and d_v != d_k must both be fine.
 Q = jax.random.normal(jax.random.key(0), (2, 3, 16))
 K = jax.random.normal(jax.random.key(1), (2, 5, 16))
 V = jax.random.normal(jax.random.key(2), (2, 5, 8))
@@ -186,7 +186,7 @@ assert out.shape == (2, 3, 8), (
     f'{out.shape} vs (2, 3, 8) — output length comes from Q, output width from V'
 )
 
-# The same function must accept a head axis: (B, H, T, Dh).
+# The same function must accept a head axis: (B, H, seq, Dh).
 q4 = jax.random.normal(jax.random.key(3), (2, 4, 6, 8))
 k4 = jax.random.normal(jax.random.key(4), (2, 4, 7, 8))
 v4 = jax.random.normal(jax.random.key(5), (2, 4, 7, 8))
@@ -306,7 +306,7 @@ for name, g, ref in [('Q', gq, Q), ('K', gk, K), ('V', gv, V)]:
 jitted = jax.jit({fn})
 assert jnp.allclose(jitted(Q, K, V), {fn}(Q, K, V), atol=1e-5), 'jit changed the result'
 
-# vmap over the batch axis: the per-example call takes (T, D) inputs.
+# vmap over the batch axis: the per-example call takes (seq, D) inputs.
 vmapped = jax.vmap({fn})(Q, K, V)
 assert vmapped.shape == (2, 4, 8), f'{vmapped.shape}'
 assert jnp.allclose(vmapped, {fn}(Q, K, V), atol=1e-5), (

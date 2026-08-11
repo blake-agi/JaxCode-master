@@ -45,7 +45,7 @@ drop.
 ### Why it exists — the KV cache, not the FLOPs
 The projections get slightly cheaper, but that is not the motivation. During
 generation the KV cache holds
-$2 \times B \times H_{kv} \times S \times d_k$ values, and at long context it
+$2 \times B \times H_{kv} \times seq \times d_k$ values, and at long context it
 dwarfs the weights. Cutting $H_{kv}$ from 64 to 8 cuts the cache **8×**, which
 is the difference between fitting a long-context batch in memory and not.
 
@@ -73,7 +73,7 @@ class GroupQueryAttention(nnx.Module):
         pass  # Replace this
 
     def __call__(self, x):
-        """(B, S, d_model) -> (B, S, d_model)"""
+        """(B, seq, d_model) -> (B, seq, d_model)"""
         pass  # Replace this
 ''',
     "solution": '''import jax
@@ -96,11 +96,11 @@ class GroupQueryAttention(nnx.Module):
         self.W_o = nnx.Linear(d_model, d_model, rngs=rngs)
 
     def __call__(self, x):
-        B, S, _ = x.shape
+        B, seq, _ = x.shape
 
-        q = self.W_q(x).reshape(B, S, self.num_heads, self.d_k).transpose(0, 2, 1, 3)
-        k = self.W_k(x).reshape(B, S, self.num_kv_heads, self.d_k).transpose(0, 2, 1, 3)
-        v = self.W_v(x).reshape(B, S, self.num_kv_heads, self.d_k).transpose(0, 2, 1, 3)
+        q = self.W_q(x).reshape(B, seq, self.num_heads, self.d_k).transpose(0, 2, 1, 3)
+        k = self.W_k(x).reshape(B, seq, self.num_kv_heads, self.d_k).transpose(0, 2, 1, 3)
+        v = self.W_v(x).reshape(B, seq, self.num_kv_heads, self.d_k).transpose(0, 2, 1, 3)
 
         # repeat, NOT tile: [a, b] -> [a, a, b, b] so query group g maps to
         # KV head g // repeats.
@@ -115,7 +115,7 @@ class GroupQueryAttention(nnx.Module):
         weights = jax.nn.softmax(scores, axis=-1)
         attn = jnp.einsum("bhqk,bhkd->bhqd", weights, v)      # == weights @ v
 
-        out = attn.transpose(0, 2, 1, 3).reshape(B, S, -1)
+        out = attn.transpose(0, 2, 1, 3).reshape(B, seq, -1)
         return self.W_o(out)
 ''',
     "demo": '''import jax
@@ -168,13 +168,13 @@ from flax import nnx
 m = {fn}(32, 4, 4, rngs=nnx.Rngs(params=2))
 x = jax.random.normal(jax.random.key(3), (2, 6, 32))
 
-B, S, H, d_k = 2, 6, 4, 8
+B, seq, H, d_k = 2, 6, 4, 8
 def split(t, h):
-    return t.reshape(B, S, h, d_k).transpose(0, 2, 1, 3)
+    return t.reshape(B, seq, h, d_k).transpose(0, 2, 1, 3)
 q, k, v = split(m.W_q(x), 4), split(m.W_k(x), 4), split(m.W_v(x), 4)
 s = jnp.einsum("bhqd,bhkd->bhqk", q, k) / jnp.sqrt(jnp.asarray(d_k, x.dtype))
 a = jnp.einsum("bhqk,bhkd->bhqd", jax.nn.softmax(s, axis=-1), v)
-ref = m.W_o(a.transpose(0, 2, 1, 3).reshape(B, S, -1))
+ref = m.W_o(a.transpose(0, 2, 1, 3).reshape(B, seq, -1))
 
 assert jnp.allclose(m(x), ref, atol=1e-5), (
     'With num_kv_heads == num_heads this must equal ordinary multi-head attention'
@@ -205,16 +205,16 @@ from flax import nnx
 
 m = {fn}(16, 4, 2, rngs=nnx.Rngs(params=6))
 x = jax.random.normal(jax.random.key(7), (1, 3, 16))
-B, S, d_k = 1, 3, 4
+B, seq, d_k = 1, 3, 4
 
-q = m.W_q(x).reshape(B, S, 4, d_k).transpose(0, 2, 1, 3)
-k2 = m.W_k(x).reshape(B, S, 2, d_k).transpose(0, 2, 1, 3)
-v2 = m.W_v(x).reshape(B, S, 2, d_k).transpose(0, 2, 1, 3)
+q = m.W_q(x).reshape(B, seq, 4, d_k).transpose(0, 2, 1, 3)
+k2 = m.W_k(x).reshape(B, seq, 2, d_k).transpose(0, 2, 1, 3)
+v2 = m.W_v(x).reshape(B, seq, 2, d_k).transpose(0, 2, 1, 3)
 
 def run(k, v):
     s = jnp.einsum("bhqd,bhkd->bhqk", q, k) / jnp.sqrt(jnp.asarray(d_k, x.dtype))
     a = jnp.einsum("bhqk,bhkd->bhqd", jax.nn.softmax(s, axis=-1), v)
-    return m.W_o(a.transpose(0, 2, 1, 3).reshape(B, S, -1))
+    return m.W_o(a.transpose(0, 2, 1, 3).reshape(B, seq, -1))
 
 correct = run(jnp.repeat(k2, 2, axis=1), jnp.repeat(v2, 2, axis=1))
 tiled = run(jnp.tile(k2, (1, 2, 1, 1)), jnp.tile(v2, (1, 2, 1, 1)))
