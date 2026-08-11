@@ -37,10 +37,15 @@ BRANCH = os.environ.get("JAXCODE_BRANCH", "master")
 DIFF_EMOJI = {"Easy": "🟢", "Medium": "🟡", "Hard": "🔴"}
 
 INSTALL_CELL = """\
-# Install jax-judge in Colab (no-op in JupyterLab/Docker)
+# Colab setup (no-op when running locally).
+# jax-judge is not published on PyPI, so the judge is installed from the
+# repo itself. Regenerate with JAXCODE_REPO=you/YourFork to point this at
+# your own fork:  JAXCODE_REPO=you/JAXCode make notebooks
 try:
     import google.colab
-    get_ipython().run_line_magic('pip', 'install -q jax-judge flax')
+    get_ipython().run_line_magic('pip', 'install -q flax optax')
+    get_ipython().run_line_magic(
+        'pip', 'install -q git+https://github.com/__REPO__.git')
 except ImportError:
     pass
 """
@@ -134,7 +139,7 @@ def _build_notebook(
     """
     cells = [
         _markdown(header),
-        _code(INSTALL_CELL),
+        _code(INSTALL_CELL.replace("__REPO__", REPO)),
         _code(_setup_cell(task)),
         _code(impl_cell),
     ]

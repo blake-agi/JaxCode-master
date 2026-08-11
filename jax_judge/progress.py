@@ -13,7 +13,18 @@ from jax_judge._term import DIM as _DIM
 from jax_judge._term import RESET as _RESET
 from jax_judge.tasks import list_tasks
 
-PROGRESS_PATH = os.environ.get("PROGRESS_PATH", "data/progress.json")
+def _default_progress_path() -> str:
+    """One progress file per checkout, regardless of where you launch from.
+
+    This used to be the relative "data/progress.json", which resolved against
+    the CURRENT WORKING DIRECTORY — so running a notebook from notebooks/ wrote
+    a different file than running one from the repo root, and your dashboard
+    silently forgot half your solves. Anchor it to the package instead.
+    """
+    return str(Path(__file__).resolve().parent.parent / "data" / "progress.json")
+
+
+PROGRESS_PATH = os.environ.get("PROGRESS_PATH") or _default_progress_path()
 
 _COLORS = {
     "solved": "\033[92m✅",     # green
