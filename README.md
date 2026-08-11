@@ -53,9 +53,11 @@ No cloud. No signup. No GPU needed.
 
 ## 🚀 How to run
 
-### Recommended — VS Code + uv
+### Option 1 — VS Code + uv (recommended) ✅ tested
 
-The whole loop runs locally with no Docker and no GitHub account.
+The whole loop runs locally with no Docker and no GitHub account. Every
+command below was run verbatim on macOS with Python 3.11 and uv 0.12, including
+a full wrong-answer → hint → correct-answer cycle through the judge.
 
 ```bash
 uv venv --python 3.11
@@ -97,7 +99,7 @@ status()             # dashboard of all 52 problems
 Progress is saved to `data/progress.json`, anchored to the repo — so it is the
 same file no matter which directory you launch a notebook from.
 
-### Alternative — Docker
+### Option 2 — Docker ⚠️ not tested
 
 ```bash
 make run     # JupyterLab at http://localhost:8888
@@ -109,7 +111,12 @@ Heavier than the local route: the image builds the JupyterLab extension, so it
 pulls Node as well as the Python stack. Use it if you would rather not install
 anything on the host.
 
-### Alternative — Google Colab
+> **Not tested.** Docker is not installed on the machine this was set up on, so
+> `make run` has not been exercised. The Dockerfile and Makefile targets are
+> carried over from the upstream PyTorch project with the package renamed and
+> the JAX dependencies swapped in; nothing about them is verified here.
+
+### Option 3 — Google Colab ⚠️ not tested
 
 **Requires pushing this repo to GitHub first.** `jax-judge` is not published on
 PyPI, so the notebooks install the judge straight from your fork, and the
@@ -125,6 +132,10 @@ Until you do that, both point at a placeholder and will 404.
 
 One caveat: a Colab VM is discarded when the session ends, so `data/progress.json`
 does not survive unless you mount Drive. The local route keeps it for free.
+
+> **Not tested.** The install cell is valid Python and the badge URLs are
+> well-formed, but both point at a placeholder repo until you push, so the path
+> has not been run end to end. Expect to debug the first notebook you open.
 
 ---
 
