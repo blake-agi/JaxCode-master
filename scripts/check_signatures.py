@@ -62,7 +62,6 @@ ALLOWED: dict[str, dict[str, str]] = {
     # --- lowercase q/k/v: PEP8, and it is what every JAX example uses. The
     #     positional meaning is identical, so nothing is lost.
     "attention": {
-        "Q": "lowercase q/k/v per PEP8 and JAX convention",
         "mask": "optional mask added so the same function serves the masked "
                 "cases; the original's 3-arg call still works unchanged",
     },
