@@ -164,10 +164,13 @@ def build_template(task_id: str, task: dict, num: str) -> dict:
         demo_heading="# 🔍 Scratch cell — poke at your implementation",
         submit_cell=(
             "# ✅ SUBMIT — run this cell to check your solution\n"
-            "from jax_judge import check, hint, solution\n\n"
+            "from jax_judge import check, hint, solution, status\n\n"
             f'check("{task_id}")\n\n'
             f'# hint("{task_id}")      # stuck? nudge without the answer\n'
-            f'# solution("{task_id}")  # spoiler: the reference implementation'
+            f'# solution("{task_id}")  # spoiler: the reference implementation\n'
+            # pad so the trailing comments line up whatever the task_id length
+            + '# status()'.ljust(len(f'# solution("{task_id}")  '))
+            + '# your dashboard across all problems'
         ),
     )
 
