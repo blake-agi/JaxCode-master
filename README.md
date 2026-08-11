@@ -51,55 +51,80 @@ No cloud. No signup. No GPU needed.
 
 ---
 
-## 🚀 Quick start
+## 🚀 How to run
 
-### Option 1 — Google Colab (zero install)
+### Recommended — VS Code + uv
 
-Every notebook carries an *Open in Colab* badge. In Colab, install the judge:
+The whole loop runs locally with no Docker and no GitHub account.
 
 ```bash
-!pip install jax-judge flax
+uv venv --python 3.11
+uv pip install -e ".[dev]"
+make setup-local
+code .
 ```
 
-Then in a cell:
+Open `notebooks/01_relu.ipynb`, choose the `.venv` interpreter as the kernel when
+VS Code asks, and work down the notebook. `.vscode/settings.json` already pins
+the interpreter and sets `jupyter.notebookFileRoot` to the repo root, so relative
+paths behave the same from every notebook.
+
+`make setup-local` gives you a practice folder:
+
+| path | what it is |
+|---|---|
+| `notebooks/*.ipynb` | **your copies — edit these** |
+| `notebooks/_solutions/` | reference implementations, out of sight |
+| `notebooks/_pristine/` | untouched blanks; `cp` one back to reset a problem |
+
+`notebooks/` is gitignored, so nothing you write gets committed. Regenerating the
+notebooks (`make notebooks`) rewrites `templates/` and `solutions/` but never
+touches your copies.
+
+### The loop
+
+Each problem is one notebook. Fill in the ✏️ cell, run the ✅ cell:
 
 ```python
 from jax_judge import check, hint, solution, status
 
-status()             # dashboard of every problem
 check("relu")        # grade your implementation
 hint("relu")         # a nudge, not the answer
 solution("relu")     # spoiler: the reference implementation
+status()             # dashboard of all 52 problems
 ```
 
-> The Colab badges are built from `JAXCODE_REPO`. After you push this to your own
-> GitHub, regenerate them so the links resolve:
-> ```bash
-> JAXCODE_REPO="you/JAXCode" make notebooks
-> ```
+Progress is saved to `data/progress.json`, anchored to the repo — so it is the
+same file no matter which directory you launch a notebook from.
 
-### Option 2 — Docker (full JupyterLab)
+### Alternative — Docker
 
 ```bash
-make run
+make run     # JupyterLab at http://localhost:8888
+make stop
+make clean   # also wipes progress
 ```
 
-Opens JupyterLab at **http://localhost:8888** with every notebook preloaded and
-progress persisted to `./data/progress.json`.
+Heavier than the local route: the image builds the JupyterLab extension, so it
+pulls Node as well as the Python stack. Use it if you would rather not install
+anything on the host.
+
+### Alternative — Google Colab
+
+**Requires pushing this repo to GitHub first.** `jax-judge` is not published on
+PyPI, so the notebooks install the judge straight from your fork, and the
+*Open in Colab* badges point at it too. Both are templated from `JAXCODE_REPO`:
 
 ```bash
-make stop     # stop it
-make clean    # stop, drop volumes, wipe progress
+git remote add origin https://github.com/YOU/JAXCode.git
+git push -u origin master
+JAXCODE_REPO="YOU/JAXCode" make notebooks     # rewrites badges AND install cells
 ```
 
-### Option 3 — Local virtualenv
+Until you do that, both point at a placeholder and will 404.
 
-```bash
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]" jupyterlab
-make setup-local
-jupyter lab notebooks/
-```
+One caveat: a Colab VM is discarded when the session ends, so `data/progress.json`
+does not survive unless you mount Drive. The local route keeps it for free.
 
 ---
 
