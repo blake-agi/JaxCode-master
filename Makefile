@@ -9,7 +9,7 @@ COMPOSE ?= $(shell \
 
 PYTHON ?= python3
 
-.PHONY: run run-build stop clean setup-local notebooks verify probe align smoke check help
+.PHONY: run run-build stop clean setup-local refresh notebooks verify probe align smoke check help
 
 help:
 	@echo "JAXCode"
@@ -48,17 +48,10 @@ clean:
 	rm -f data/progress.json
 
 setup-local:
-	@mkdir -p notebooks/_solutions notebooks/_pristine
-	@cp templates/*.ipynb notebooks/
-	@cp templates/*.ipynb notebooks/_pristine/
-	@cp solutions/*.ipynb notebooks/_solutions/
-	@echo ""
-	@echo "✅ Practice notebooks ready in ./notebooks/"
-	@echo "   edit these       notebooks/NN_name.ipynb"
-	@echo "   reference        notebooks/_solutions/"
-	@echo "   pristine blanks  notebooks/_pristine/   (cp back to reset a problem)"
-	@echo ""
-	@echo "   notebooks/ is gitignored — nothing you write gets committed."
+	$(PYTHON) scripts/refresh_notebooks.py
+
+refresh:
+	$(PYTHON) scripts/refresh_notebooks.py
 
 notebooks:
 	$(PYTHON) scripts/generate_notebooks.py

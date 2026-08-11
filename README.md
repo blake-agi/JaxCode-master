@@ -83,6 +83,11 @@ paths behave the same from every notebook.
 notebooks (`make notebooks`) rewrites `templates/` and `solutions/` but never
 touches your copies.
 
+After pulling changes, `make refresh` copies in new and updated problems while
+**skipping any notebook you have edited** — it diffs each one against
+`notebooks/_pristine/` and leaves your work alone, listing what it protected.
+(`make setup-local` is the same command; it is safe to re-run at any time.)
+
 ### The loop
 
 Each problem is one notebook. Fill in the ✏️ cell, run the ✅ cell:
