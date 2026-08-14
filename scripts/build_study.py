@@ -353,7 +353,78 @@ def build_dashboard() -> int:
     MISTAKES_MD.write_text("\n".join(lines) + "\n")
     print(f"\n{GREEN}✓ wrote {MISTAKES_MD}{RESET}")
     print(f"  {DIM}{len(tasks)} tasks, {len(mistakes)} mistake rows, {len(attempts)} attempt rows{RESET}\n")
+
+    _update_readme(tasks, problems, progress, attempts_by_task)
     return 0
+
+
+README_BEGIN = "<!-- BEGIN PROGRESS -->"
+README_END = "<!-- END PROGRESS -->"
+
+# Interview frequency, most-asked first — this is the order worth practising in.
+_FREQ_ORDER = ["🔥", "⭐", "💡", "—", ""]
+_FREQ_LABEL = {
+    "🔥": "🔥 Very likely in interviews",
+    "⭐": "⭐ Commonly asked",
+    "💡": "💡 Emerging / differentiator",
+    "—": "— JAX fundamentals (no PyTorch counterpart)",
+}
+
+
+def _update_readme(tasks, problems, progress, attempts_by_task) -> None:
+    """Refresh the progress block in the practice repo's README, in place.
+
+    Only touches a README that already carries the BEGIN/END markers, so this
+    silently does nothing in a plain checkout — same spirit as every other
+    path here being an optional override.
+    """
+    readme = STUDY_DIR.parent / "README.md"
+    if not readme.exists():
+        return
+    text = readme.read_text()
+    if README_BEGIN not in text or README_END not in text:
+        return
+
+    def solved(tid: str) -> bool:
+        return progress.get(tid, {}).get("status") == "solved" or any(
+            a.get("solved") == "1" for a in attempts_by_task.get(tid, [])
+        )
+
+    by_freq: dict[str, list[str]] = defaultdict(list)
+    for tid in tasks:
+        p = problems.get(tid, {})
+        by_freq[p.get("frequency") if tid in problems else "—"].append(tid)
+
+    done, total = sum(1 for t in tasks if solved(t)), len(tasks)
+    out = [README_BEGIN, ""]
+    out.append(f"**{done} / {total} solved.** Grouped by how often the problem comes up in "
+               "interviews — work down from the top. Full write-ups of what I got wrong are "
+               "in [study/MISTAKES.md](study/MISTAKES.md).")
+    out.append("")
+    for freq in _FREQ_ORDER:
+        group = by_freq.get(freq)
+        if not group:
+            continue
+        g_done = sum(1 for t in group if solved(t))
+        out.append(f"### {_FREQ_LABEL.get(freq, freq)} — {g_done}/{len(group)}")
+        out.append("")
+        for tid in group:
+            p = problems.get(tid, {})
+            num = _number_for(tid, p)
+            diff = p.get("difficulty") or TASKS.get(tid, {}).get("difficulty", "")
+            mark = "x" if solved(tid) else " "
+            nb = NOTEBOOKS_DIR / f"{num}_{tid}.ipynb"
+            name = (f"[`{tid}`]({os.path.relpath(nb, readme.parent)})"
+                    if nb.exists() else f"`{tid}`")
+            out.append(f"- [{mark}] `{num}` {name} — {diff}")
+        out.append("")
+    out.append(README_END)
+
+    head, _, rest = text.partition(README_BEGIN)
+    _, _, tail = rest.partition(README_END)
+    readme.write_text(head + "\n".join(out) + tail)
+    print(f"{GREEN}✓ refreshed the progress block in {readme}{RESET}")
+    print(f"  {DIM}{done}/{total} solved{RESET}\n")
 
 
 def main() -> int:
