@@ -1,6 +1,6 @@
 ---
 name: log-it
-description: End-of-problem routine — summarize the commented-out try1..tryN attempts in whatever notebook(s) you've been editing into study/mistakes.csv and study/tries.csv, regenerate study/MISTAKES.md, then commit and push the the practice repo repo. Auto-detects which notebook(s) changed — no task name needed. Use after finishing a problem, when the user says things like "log it", "log my mistakes", "log mistakes for attention", or "把 attention 记进错题本".
+description: End-of-problem routine — summarize the commented-out try1..tryN attempts in whatever notebook(s) you've been editing into study/mistakes.csv and study/tries.csv, regenerate study/MISTAKES.md, then commit and push the practice repo. Auto-detects which notebook(s) changed — no task name needed. Use after finishing a problem, when the user says things like "log it", "log my mistakes", "log mistakes for attention", or "把 attention 记进错题本".
 ---
 
 # log-it
@@ -123,20 +123,28 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
    (adjust the `cd` if already in that directory). This reads all four
    CSVs and rewrites `study/MISTAKES.md` — never edit that file directly.
 
-8. **Commit and push `the practice repo`.** This is the end of the routine, so the
-   work lands in the private repo without a separate ask. One commit covers
-   the notebook and the study log, since they now live in the same repo:
+8. **Commit and push the practice repo.** This is the end of the routine, so
+   the work lands without a separate ask. One commit covers both the notebook
+   and the study log when they share a repo.
+
+   Find the repo rather than assuming a path — it is wherever the study log
+   lives, which the judge already knows:
    ```bash
-   cd <practice repo> && git add -A && git status --short
+   python -c "from jax_judge.progress import _default_study_dir as d; print(d())"
+   cd "$(git -C "<that path>" rev-parse --show-toplevel)" && git add -A && git status --short
    ```
+   If that directory is not inside a git repository, skip this step and say so
+   — do not run `git init` uninvited.
+
    Review what's staged before committing — confirm nothing unexpected crept
    in (no `.venv`, no `_pristine/`, no `_solutions/`, no stray large files).
    Then commit with a message naming the task(s) and what was learned, and
-   push to `origin main`. If the push fails (offline, auth), say so plainly
-   and leave the commit in place — do not retry in a loop.
+   push to `origin`'s current branch. If the push fails (offline, auth), say
+   so plainly and leave the commit in place — do not retry in a loop.
 
-   Only `the practice repo` is auto-committed. Changes to the JaxCode repo (tooling,
-   this skill) are a separate concern — mention them and let the user decide.
+   Only the practice repo is auto-committed. Changes to the JaxCode repo
+   (tooling, this skill) are a separate concern — mention them and let the
+   user decide.
 
 9. **Report back.** Print the mistakes you just recorded (new rows and
    bumped `times_seen`), the try count, and the commit. Keep it short — a few

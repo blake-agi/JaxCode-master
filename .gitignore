@@ -25,3 +25,6 @@ labextension/yarn.lock
 
 # editor
 .vscode/
+
+# Claude Code per-machine settings (permissions etc.) — personal, not shared.
+.claude/settings.local.json
