@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 from datetime import datetime
@@ -74,6 +75,56 @@ def mark_attempted(task_id: str) -> None:
     entry["attempts"] = entry.get("attempts", 0) + 1
     data[task_id] = entry
     _save(data)
+
+
+def _default_study_dir() -> Path:
+    """study/ lives next to the repo checkout, not inside it — it's your personal
+    log, not something the JAX port ships. Same env-override pattern as
+    PROGRESS_PATH so both can be redirected together in tests."""
+    override = os.environ.get("JAXCODE_STUDY_DIR")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent.parent / "study"
+
+
+_ATTEMPTS_FIELDS = ["timestamp", "task", "number", "attempt", "passed", "total", "elapsed_s", "solved"]
+
+
+def log_attempt(task_id: str, passed: int, total: int, elapsed: float | None, solved: bool) -> None:
+    """Append one row to study/attempts.csv. Best-effort: a broken or absent
+    study/ directory must never break `check()` — this is a personal learning
+    log, not part of the judge contract, so any failure here is swallowed."""
+    try:
+        study_dir = _default_study_dir()
+        if not study_dir.is_dir():
+            return
+
+        csv_path = study_dir / "attempts.csv"
+        prior_attempts = 0
+        if csv_path.exists():
+            with open(csv_path, newline="") as f:
+                prior_attempts = sum(1 for row in csv.DictReader(f) if row.get("task") == task_id)
+
+        from jax_judge.tasks import TASKS
+        number = TASKS.get(task_id, {}).get("number", "")
+
+        write_header = not csv_path.exists()
+        with open(csv_path, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=_ATTEMPTS_FIELDS)
+            if write_header:
+                writer.writeheader()
+            writer.writerow({
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "task": task_id,
+                "number": number,
+                "attempt": prior_attempts + 1,
+                "passed": passed,
+                "total": total,
+                "elapsed_s": f"{elapsed:.3f}" if elapsed is not None else "",
+                "solved": int(solved),
+            })
+    except Exception:
+        pass
 
 
 def status() -> None:

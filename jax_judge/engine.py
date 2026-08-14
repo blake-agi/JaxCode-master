@@ -18,7 +18,7 @@ from jax_judge._term import RED as _RED
 from jax_judge._term import RESET as _RESET
 from jax_judge._term import YELLOW as _YELLOW
 from jax_judge.tasks import get_task, TASKS
-from jax_judge.progress import mark_solved, mark_attempted
+from jax_judge.progress import log_attempt, mark_solved, mark_attempted
 
 
 def _get_user_namespace() -> dict[str, Any]:
@@ -244,10 +244,12 @@ def check(task_id: str) -> None:
         print(f"  {_DIM}Timings include XLA tracing/compilation, so they are not a{_RESET}")
         print(f"  {_DIM}clean benchmark — use %timeit on a warmed-up jit for that.{_RESET}")
         mark_solved(task_id, total_time)
+        log_attempt(task_id, passed, total, total_time, solved=True)
         print(f"  {_DIM}Progress saved. Run status() to see your dashboard.{_RESET}\n")
     else:
         print(f"  {_YELLOW}📊 {passed}/{total} tests passed.{_RESET}")
         mark_attempted(task_id)
+        log_attempt(task_id, passed, total, total_time, solved=False)
         print(f"  {_DIM}Keep going! Use hint(\"{task_id}\") if you're stuck,{_RESET}")
         print(f"  {_DIM}or solution(\"{task_id}\") to see a reference implementation.{_RESET}\n")
 
