@@ -58,6 +58,9 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
    - Every `# !!!` (or similar self-flagged) annotation and the line it's on.
    - The final, live (uncommented) implementation.
    - Any scratch cells that show debugging output relevant to an attempt.
+   - **Notes admitting help** — `no idea`, `looked at the answer`, `gave up`,
+     `copied`, or a try block whose whole body is a note rather than code.
+     Treat these as an *aid* signal (step 6b), not only as mistake material.
 
 3. **Read the reference.** Open `jax_judge/tasks/<task_id>.py` and look at
    `TASK["solution"]` for how the canonical implementation differs from the
@@ -101,6 +104,18 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
    count per task, not a history — if a row for this task already exists,
    overwrite it (replace the row), don't append a second one.
 
+6b. **Backfill aid, only if it's missing.** `study/aid.csv`
+   (`timestamp,task,kind` where kind is `hint` or `solution`) is normally
+   written automatically by `log_aid()` whenever you call `hint()` or
+   `solution()`. The skill only fills gaps: help taken outside the notebook,
+   or before that instrumentation existed, survives *only* as a comment.
+   So if step 2 found a note admitting help and `aid.csv` has no row for that
+   task, append one — `kind` = `solution` if the note mentions the answer or
+   reference, else `hint`; timestamp from the attempt/solve evidence, dated
+   **before** the first solve or the dashboard will (correctly) ignore it.
+   If `aid.csv` already covers the task, change nothing — the machine record
+   wins.
+
 7. **Regenerate the dashboard.** Run:
    ```bash
    cd JaxCode-master && python scripts/build_study.py
@@ -122,8 +137,9 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
   nothing.
 - Don't touch `study/attempts.csv` or `study/problems.csv` — those belong to
   `jax_judge.progress.log_attempt()` and `scripts/build_study.py
-  --init-problems` respectively. `study/tries.csv` and `study/mistakes.csv`
-  are the two files this skill owns.
+  --init-problems` respectively. This skill owns `study/tries.csv` and
+  `study/mistakes.csv` outright, and may only *backfill gaps* in
+  `study/aid.csv`, which `log_aid()` owns.
 - Don't delete or rewrite the commented-out attempts in the notebook itself
   — they're the source material and the user's own record; this skill only
   reads them.

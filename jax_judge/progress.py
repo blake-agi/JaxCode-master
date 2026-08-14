@@ -127,6 +127,37 @@ def log_attempt(task_id: str, passed: int, total: int, elapsed: float | None, so
         pass
 
 
+_AID_FIELDS = ["timestamp", "task", "kind"]
+
+
+def log_aid(task_id: str, kind: str) -> None:
+    """Append one row to study/aid.csv when you reach for hint() or solution().
+
+    Without this, needing help leaves no trace: a task solved on the first
+    check() after reading the reference looks identical to one solved cold,
+    which inverts the very signal worth acting on. Same best-effort contract as
+    log_attempt() — never let the study log break the judge.
+    """
+    try:
+        study_dir = _default_study_dir()
+        if not study_dir.is_dir():
+            return
+
+        csv_path = study_dir / "aid.csv"
+        write_header = not csv_path.exists()
+        with open(csv_path, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=_AID_FIELDS)
+            if write_header:
+                writer.writeheader()
+            writer.writerow({
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "task": task_id,
+                "kind": kind,
+            })
+    except Exception:
+        pass
+
+
 def status() -> None:
     """Print a dashboard of all problems and their status, grouped by category."""
     data = _load()

@@ -18,7 +18,7 @@ from jax_judge._term import RED as _RED
 from jax_judge._term import RESET as _RESET
 from jax_judge._term import YELLOW as _YELLOW
 from jax_judge.tasks import get_task, TASKS
-from jax_judge.progress import log_attempt, mark_solved, mark_attempted
+from jax_judge.progress import log_aid, log_attempt, mark_solved, mark_attempted
 
 
 def _get_user_namespace() -> dict[str, Any]:
@@ -260,6 +260,7 @@ def hint(task_id: str) -> None:
     if task is None:
         print(f"{_RED}Unknown task '{task_id}'.{_RESET}")
         return
+    log_aid(task_id, "hint")
     print(f"\n{_YELLOW}💡 Hint for {task['title']}:{_RESET}")
     print(f"   {task['hint']}\n")
 
@@ -273,6 +274,7 @@ def solution(task_id: str) -> None:
     if task is None:
         print(f"{_RED}Unknown task '{task_id}'.{_RESET}")
         return
+    log_aid(task_id, "solution")
     print(f"\n{_CYAN}📖 Reference solution — {task['title']}:{_RESET}")
     print(f"{_DIM}{'─' * 56}{_RESET}")
     print(task["solution"].strip())
