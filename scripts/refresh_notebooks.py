@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -23,7 +24,10 @@ sys.path.insert(0, str(ROOT))
 
 from jax_judge._term import BOLD, DIM, GREEN, RED, RESET, YELLOW  # noqa: E402
 
-WORK = ROOT / "notebooks"
+# Optional override so your working notebooks can live outside this checkout
+# (e.g. in a private practice repo). Unset — as in any fresh clone — this is
+# exactly ROOT/notebooks, so nothing changes for anyone else.
+WORK = Path(os.environ.get("JAXCODE_NOTEBOOKS_DIR") or ROOT / "notebooks")
 PRISTINE = WORK / "_pristine"
 SOLUTIONS = WORK / "_solutions"
 

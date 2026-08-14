@@ -50,7 +50,10 @@ from jax_judge.tasks import TASKS  # noqa: E402
 
 ORIGINAL = Path(os.environ.get("TORCHCODE_ORIGINAL", ROOT.parent / "TorchCode-master-original"))
 STUDY_DIR = Path(os.environ.get("JAXCODE_STUDY_DIR", ROOT.parent / "study"))
-NOTEBOOKS_DIR = ROOT / "notebooks"
+# Optional override so your working notebooks can live outside this checkout
+# (e.g. in a private practice repo). Unset — as in any fresh clone — this is
+# exactly ROOT/notebooks, so nothing changes for anyone else.
+NOTEBOOKS_DIR = Path(os.environ.get("JAXCODE_NOTEBOOKS_DIR") or ROOT / "notebooks")
 
 PROBLEMS_CSV = STUDY_DIR / "problems.csv"
 ATTEMPTS_CSV = STUDY_DIR / "attempts.csv"

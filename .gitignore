@@ -7,6 +7,10 @@ data/*.db
 .DS_Store
 notebooks/
 
+# Local machine paths (points the judge at a private practice repo).
+# Without it the in-repo defaults apply, which is what a fresh clone wants.
+.env
+
 # PyPI build artifacts
 dist/
 build/

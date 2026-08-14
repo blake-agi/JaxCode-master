@@ -18,11 +18,15 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import os
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WORK = ROOT / "notebooks"
+# Optional override so your working notebooks can live outside this checkout
+# (e.g. in a private practice repo). Unset — as in any fresh clone — this is
+# exactly ROOT/notebooks, so nothing changes for anyone else.
+WORK = Path(os.environ.get("JAXCODE_NOTEBOOKS_DIR") or ROOT / "notebooks")
 PRISTINE = WORK / "_pristine"
 
 # "05_attention" -> "attention", but "b_01_grad_basics" -> "grad_basics" — the
