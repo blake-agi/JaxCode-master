@@ -44,6 +44,9 @@ ADDED = {
     "grad_basics", "vmap_batching", "jit_static", "pytree_ops", "prng_keys",
     "lax_scan", "lax_control_flow", "custom_vjp", "higher_order_grad",
     "remat_checkpoint", "sharding_basics",
+    # Not a JAX-specific idea, but it has no counterpart in the PyTorch original
+    # and the axis/keepdims discipline it drills is worth its own problem.
+    "logsumexp",
 }
 
 

@@ -176,6 +176,25 @@ def dpo_loss(pc, pr, rc, rr, beta=0.1):
     return -jnp.mean(jax.nn.log_sigmoid(beta*(pc - pr)))
 ''')))
 
+print(f"\n{BOLD}=== logsumexp ==={RESET}")
+# The bug this problem exists for: `m` is added back still carrying keepdims,
+# so it broadcasts instead of adding. Values stay correct on 1-D — only the
+# rank is wrong — which is exactly why the suite must assert shapes.
+holes.append(("logsumexp", probe("logsumexp", "keepdims max added back to a reduced sum", '''
+import jax.numpy as jnp
+def logsumexp(x, axis=-1, keepdims=False):
+    m = jnp.max(x, axis=axis, keepdims=True)
+    out = jnp.log(jnp.sum(jnp.exp(x - m), axis=axis)) + m
+    return out if keepdims else jnp.squeeze(out, axis)
+''')))
+holes.append(("logsumexp", probe("logsumexp", "global max instead of per-slice", '''
+import jax.numpy as jnp
+def logsumexp(x, axis=-1, keepdims=False):
+    m = jnp.max(x)
+    out = jnp.log(jnp.sum(jnp.exp(x - m), axis=axis, keepdims=True)) + m
+    return out if keepdims else jnp.squeeze(out, axis)
+''')))
+
 print(f"\n{BOLD}=== cross_entropy ==={RESET}")
 holes.append(("cross_entropy", probe("cross_entropy", "log(softmax()) instead of log_softmax", '''
 import jax, jax.numpy as jnp

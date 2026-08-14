@@ -367,7 +367,7 @@ _FREQ_LABEL = {
     "🔥": "🔥 Very likely in interviews",
     "⭐": "⭐ Commonly asked",
     "💡": "💡 Emerging / differentiator",
-    "—": "— JAX fundamentals (no PyTorch counterpart)",
+    "—": "— Added (no PyTorch counterpart, so no frequency rating)",
 }
 
 
