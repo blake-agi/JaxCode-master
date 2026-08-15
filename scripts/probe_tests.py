@@ -177,6 +177,24 @@ def dpo_loss(pc, pr, rc, rr, beta=0.1):
 ''')))
 
 print(f"\n{BOLD}=== logsumexp ==={RESET}")
+# This task needs two symbols, so each probe supplies a correct partner for the
+# one it is breaking — otherwise the namespace is incomplete and the probe fails
+# for the wrong reason.
+_LSE_OK = """
+import jax.numpy as jnp
+def logsumexp(x, axis=-1, keepdims=False):
+    m = jnp.max(x, axis=axis, keepdims=True)
+    m = jnp.where(jnp.isfinite(m), m, 0.0)
+    out = jnp.log(jnp.sum(jnp.exp(x - m), axis=axis, keepdims=True)) + m
+    return out if keepdims else jnp.squeeze(out, axis=axis)
+"""
+_MERGE_OK = """
+def logsumexp_merge(m1, l1, m2, l2):
+    m = jnp.maximum(m1, m2)
+    safe = jnp.where(jnp.isfinite(m), m, 0.0)
+    return m, l1 * jnp.exp(m1 - safe) + l2 * jnp.exp(m2 - safe)
+"""
+
 # The bug this problem exists for: `m` is added back still carrying keepdims,
 # so it broadcasts instead of adding. Values stay correct on 1-D — only the
 # rank is wrong — which is exactly why the suite must assert shapes.
@@ -186,13 +204,29 @@ def logsumexp(x, axis=-1, keepdims=False):
     m = jnp.max(x, axis=axis, keepdims=True)
     out = jnp.log(jnp.sum(jnp.exp(x - m), axis=axis)) + m
     return out if keepdims else jnp.squeeze(out, axis)
-''')))
+''' + _MERGE_OK)))
 holes.append(("logsumexp", probe("logsumexp", "global max instead of per-slice", '''
 import jax.numpy as jnp
 def logsumexp(x, axis=-1, keepdims=False):
     m = jnp.max(x)
     out = jnp.log(jnp.sum(jnp.exp(x - m), axis=axis, keepdims=True)) + m
     return out if keepdims else jnp.squeeze(out, axis)
+''' + _MERGE_OK)))
+
+# The streaming merge must rescale BOTH partial sums onto the new max. Rescaling
+# only the incoming one is the natural mistake, and stays invisible until the
+# chunks sit on different scales.
+holes.append(("logsumexp", probe("logsumexp", "merge rescales only one side", _LSE_OK + '''
+def logsumexp_merge(m1, l1, m2, l2):
+    m = jnp.maximum(m1, m2)
+    return m, l1 + l2 * jnp.exp(m2 - m)
+''')))
+# Correct for every non-empty input; only the (-inf, 0) identity exposes it,
+# because exp(-inf - -inf) is nan rather than 0.
+holes.append(("logsumexp", probe("logsumexp", "merge has no -inf guard (empty state -> nan)", _LSE_OK + '''
+def logsumexp_merge(m1, l1, m2, l2):
+    m = jnp.maximum(m1, m2)
+    return m, l1 * jnp.exp(m1 - m) + l2 * jnp.exp(m2 - m)
 ''')))
 
 print(f"\n{BOLD}=== cross_entropy ==={RESET}")

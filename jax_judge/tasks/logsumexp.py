@@ -6,26 +6,31 @@ TASK = {
     "number": "b_12",
     "difficulty": "Medium",
     "function_name": "logsumexp",
+    "extra_names": ["logsumexp_merge"],
     "hint": (
-        "Subtract the per-slice max before exp(), exactly as in softmax — but "
-        "watch what happens when you add it back. You need keepdims=True on the "
-        "max so it broadcasts against x for the subtraction, and then the sum "
-        "reduces the axis away, so the two operands no longer line up. Adding a "
-        "(..., 1) max to a (...,) sum does not error: it broadcasts into an "
-        "outer sum of the wrong rank. Squeeze the axis back out, or keep it on "
-        "both and let keepdims decide at the end."
+        "Part 1: subtract the per-slice max before exp(), exactly as in softmax "
+        "— but watch what happens when you add it back. You need keepdims=True "
+        "on the max so it broadcasts against x for the subtraction, and then the "
+        "sum reduces the axis away, so the two operands no longer line up. "
+        "Adding a (..., 1) max to a (...,) sum does not error: it broadcasts "
+        "into an outer sum of the wrong rank. Squeeze the axis back out, or keep "
+        "it on both and let keepdims decide at the end. "
+        "Part 2: to merge two (max, sum-of-exp) states, take the new max and "
+        "rescale BOTH sums onto it before adding — l * exp(m_old - m_new). The "
+        "empty state is (-inf, 0), and exp(-inf - -inf) is nan, so pin the "
+        "exponent when the new max is not finite."
     ),
     "description": r"""
-Implement **logsumexp** — numerically stable, with a working `axis` and
-`keepdims`.
+Implement **logsumexp** two ways: as a normal reduction, and as a *streaming*
+merge that never sees all the data at once.
 
 $$\text{logsumexp}(x) = \log \sum_i e^{x_i}
 = m + \log \sum_i e^{x_i - m}, \qquad m = \max_i x_i$$
 
-### Signature
+### Signatures
 ```python
-def logsumexp(x, axis=-1, keepdims=False):
-    ...
+def logsumexp(x, axis=-1, keepdims=False): ...
+def logsumexp_merge(m1, l1, m2, l2): ...      # -> (m, l)
 ```
 
 ### Rules
@@ -33,6 +38,10 @@ def logsumexp(x, axis=-1, keepdims=False):
 - Stable for large positive **and** large negative inputs
 - `axis` may be any valid axis; `keepdims` must behave like every other
   reduction
+
+---
+
+## Part 1 — the reduction
 
 ### The trap that makes this its own problem
 Softmax uses the same max trick, so it is tempting to assume the same shape
@@ -42,7 +51,7 @@ Softmax **divides** by its sum. With `keepdims=True` on both reductions the
 shapes cancel, so uniform `keepdims` is simply correct:
 
 ```python
-z = x - x.max(axis, keepdims=True)      # (2, 3)
+z = x - x.max(axis, keepdims=True)             # (2, 3)
 e = jnp.exp(z) / jnp.sum(..., keepdims=True)   # (2, 3) / (2, 1) -> (2, 3)  ✓
 ```
 
@@ -61,8 +70,7 @@ row's value duplicated. Nothing errors, and a test that only checks values at
 `x_max.squeeze(axis)` — or `keepdims=True` on both and one squeeze at the end.
 
 A square input hides this completely: `(3,) + (3, 1)` broadcasts to `(3, 3)`
-without complaint, and so does the correct version's shape check if you only
-compare `len(out)`. Test with something like `(2, 3)`.
+without complaint. Test with something like `(2, 3)`.
 
 ### Why the max must be per-slice
 Shifting by any constant is exact, so on a single vector a global `max(x)` also
@@ -70,16 +78,37 @@ works. Across slices on different scales it does not: subtract a global `1000`
 from a row sitting near `-1000` and every term underflows to `0`, leaving
 `log(0) = -inf`. Reduce along the axis you are reducing over.
 
-### Where it shows up
-Cross-entropy (as log-softmax), any log-domain probability accumulation, and
-Flash Attention's running maximum — which is this function computed
-incrementally, merging `(m, l)` pairs without ever holding all the scores.
+---
+
+## Part 2 — the streaming merge
+
+Represent a partial result as the pair $(m, \ell)$ with
+$m = \max x_i$ and $\ell = \sum_i e^{x_i - m}$, so the answer is
+$m + \log \ell$. `logsumexp_merge` combines two such pairs:
+
+$$m = \max(m_1, m_2), \qquad
+\ell = \ell_1 e^{m_1 - m} + \ell_2 e^{m_2 - m}$$
+
+Both sums are rescaled onto the *new* max before adding — that rescale is the
+whole trick, and it is why the running total never overflows no matter what
+order the chunks arrive in.
+
+This is exactly FlashAttention's inner loop (problem 25): the running `m` and
+`l` carried across key tiles, with everything accumulated so far retroactively
+rescaled whenever a later tile raises the maximum. It is also why attention
+never needs to materialise the full `(seq_q, seq_k)` score matrix.
+
+### The empty state
+The identity element is $(-\infty,\, 0)$ — merging it changes nothing, which is
+what lets you start a fold from it. Watch the arithmetic: when *both* inputs are
+$-\infty$ the new max is $-\infty$ too, and `exp(-inf - -inf)` is `nan`, not `0`.
+Pin the exponent when the max is not finite.
 
 ### A useful identity
 $$\frac{\partial}{\partial x_i}\,\text{logsumexp}(x) = \text{softmax}(x)_i$$
 
-so the gradient is a probability distribution and sums to 1. Worth knowing: it
-is the fastest way to check your implementation differentiates correctly.
+so the gradient is a probability distribution and sums to 1 — the fastest way to
+check your implementation differentiates correctly.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -97,6 +126,22 @@ def logsumexp(x, axis=-1, keepdims=False):
         Array with `axis` reduced (or kept as length 1 when keepdims=True).
     """
     pass  # Replace this
+
+
+def logsumexp_merge(m1, l1, m2, l2):
+    """Combine two (max, sum-of-exp) partial states into one.
+
+    Each state means "some chunk of data whose max is m and whose shifted
+    exponential sum is l", so its logsumexp is m + log(l).
+
+    Args:
+        m1, l1: the first chunk's running max and shifted sum
+        m2, l2: the second chunk's
+
+    Returns:
+        (m, l) for the two chunks combined.
+    """
+    pass  # Replace this
 ''',
     "solution": '''import jax
 import jax.numpy as jnp
@@ -105,7 +150,7 @@ import jax.numpy as jnp
 def logsumexp(x, axis=-1, keepdims=False):
     # keepdims=True here so the max broadcasts against x for the subtraction.
     x_max = jnp.max(x, axis=axis, keepdims=True)
-    # Guard against an all -inf slice, where max is -inf and x - x_max is nan.
+    # An all -inf slice has max -inf, and -inf - -inf is nan. Shift by 0 there.
     x_max = jnp.where(jnp.isfinite(x_max), x_max, 0.0)
 
     # Keep the axis on the sum too, so both operands still line up when the max
@@ -114,6 +159,16 @@ def logsumexp(x, axis=-1, keepdims=False):
     out = jnp.log(jnp.sum(jnp.exp(x - x_max), axis=axis, keepdims=True)) + x_max
 
     return out if keepdims else jnp.squeeze(out, axis=axis)
+
+
+def logsumexp_merge(m1, l1, m2, l2):
+    m = jnp.maximum(m1, m2)
+    # Same -inf guard: the empty state is (-inf, 0), and merging two empties
+    # would otherwise compute exp(-inf - -inf) = nan instead of 0.
+    safe = jnp.where(jnp.isfinite(m), m, 0.0)
+    # Rescale BOTH sums onto the new max before adding — this is what keeps the
+    # running total finite regardless of the order chunks arrive in.
+    return m, l1 * jnp.exp(m1 - safe) + l2 * jnp.exp(m2 - safe)
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
@@ -141,14 +196,24 @@ big = jnp.array([1000.0, 1001.0, 1002.0])
 print("\\nnaive      :", jnp.log(jnp.sum(jnp.exp(big))))
 print("stable     :", logsumexp(big))
 
-# The gradient is softmax — a quick correctness check that costs one line.
+# Streaming: fold over chunks, never holding them all at once.
+chunks = [jnp.array([1.0, 2.0, 3.0]), jnp.array([100.0, 101.0]), jnp.array([-50.0])]
+state = (-jnp.inf, 0.0)                             # the empty state
+for c in chunks:
+    cm = jnp.max(c)
+    state = logsumexp_merge(*state, cm, jnp.sum(jnp.exp(c - cm)))
+m_all, l_all = state
+print("\\nstreamed   :", m_all + jnp.log(l_all))
+print("one-shot   :", logsumexp(jnp.concatenate(chunks)))
+
+# The gradient is softmax — a correctness check that costs one line.
 g = jax.grad(lambda v: logsumexp(v))(jnp.array([1.0, 2.0, 3.0]))
 print("\\ngrad       :", g)
 print("softmax    :", jax.nn.softmax(jnp.array([1.0, 2.0, 3.0])))
 ''',
     "tests": [
         {
-            "name": "Basic 1-D",
+            "name": "Basic 1-D, and the n=2 case is logaddexp",
             "code": """
 import jax
 import jax.numpy as jnp
@@ -162,6 +227,13 @@ assert jnp.ndim(out) == 0, (
     'If this is (1,), the max was added back with its keepdims axis still on.'
 )
 assert jnp.allclose(out, expected, atol=1e-5), f'{out} vs {expected}'
+
+# Two elements is exactly logaddexp — the special case behind log1pexp.
+pair = jnp.array([0.0, 100.0])
+assert jnp.allclose({fn}(pair), jnp.logaddexp(0.0, 100.0), atol=1e-5), (
+    f'{fn}([0, 100]) should equal logaddexp(0, 100) = {jnp.logaddexp(0.0, 100.0)}, '
+    f'got {{fn}}(pair)'
+)
 """,
         },
         {
@@ -188,7 +260,7 @@ for axis in (-1, 0, 1):
 
 # 3-D, middle axis — the reduced axis must be removed, not just resized.
 y = jax.random.normal(jax.random.key(1), (2, 3, 4))
-assert {fn}(y, axis=1).shape == (2, 4), f'3-D axis=1 gave {{fn}}(y, axis=1).shape'
+assert {fn}(y, axis=1).shape == (2, 4), f'3-D axis=1 gave a wrong shape'
 """,
         },
         {
@@ -295,6 +367,103 @@ mapped = jax.vmap(lambda row: {fn}(row))(x)
 assert mapped.shape == (2,), f'vmap gave {mapped.shape}, expected (2,)'
 assert jnp.allclose(mapped, {fn}(x, axis=-1), atol=1e-5), (
     'vmap over rows disagrees with axis=-1'
+)
+""",
+        },
+        {
+            "name": "Merging two chunks equals reducing the whole",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+def state(c):
+    m = jnp.max(c)
+    return m, jnp.sum(jnp.exp(c - m))
+
+a = jnp.array([1.0, 2.0, 3.0])
+b = jnp.array([0.5, -4.0])
+m, l = logsumexp_merge(*state(a), *state(b))
+got = m + jnp.log(l)
+want = jax.scipy.special.logsumexp(jnp.concatenate([a, b]))
+
+assert jnp.allclose(got, want, atol=1e-5), (
+    f'Merged {got} but the whole reduces to {want}. Both partial sums must be '
+    'rescaled onto the NEW max before adding: l * exp(m_old - m_new).'
+)
+
+# Order must not matter — the merge is commutative.
+m2, l2 = logsumexp_merge(*state(b), *state(a))
+assert jnp.allclose(m2 + jnp.log(l2), want, atol=1e-5), (
+    'Merging b then a gave a different answer from a then b'
+)
+""",
+        },
+        {
+            "name": "Merging survives chunks on wildly different scales",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+def state(c):
+    m = jnp.max(c)
+    return m, jnp.sum(jnp.exp(c - m))
+
+# The point of carrying (m, l) instead of a raw running sum: the second chunk
+# is ~e^1000 times larger, so anything unshifted overflows here.
+small = jnp.array([1.0, 2.0])
+huge = jnp.array([1000.0, 1001.0])
+
+m, l = logsumexp_merge(*state(small), *state(huge))
+got = m + jnp.log(l)
+want = jax.scipy.special.logsumexp(jnp.concatenate([small, huge]))
+assert jnp.isfinite(got), f'Got {got} — the earlier sum was not rescaled onto the new max'
+assert jnp.allclose(got, want, atol=1e-3), f'{got} vs {want}'
+
+# ...and in the other order, where the max ARRIVES first and the later chunk
+# must be scaled down instead.
+m2, l2 = logsumexp_merge(*state(huge), *state(small))
+assert jnp.isfinite(m2 + jnp.log(l2)), 'Non-finite when the larger chunk comes first'
+assert jnp.allclose(m2 + jnp.log(l2), want, atol=1e-3), 'Order changed the answer'
+""",
+        },
+        {
+            "name": "The empty state (-inf, 0) is an identity, and folds",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+def state(c):
+    m = jnp.max(c)
+    return m, jnp.sum(jnp.exp(c - m))
+
+EMPTY = (-jnp.inf, 0.0)
+
+# Merging the empty state must change nothing — that is what lets a fold start.
+a = jnp.array([1.0, 2.0, 3.0])
+m, l = logsumexp_merge(*EMPTY, *state(a))
+assert jnp.allclose(m + jnp.log(l), jax.scipy.special.logsumexp(a), atol=1e-5), (
+    'Merging the empty state (-inf, 0) changed the result — it must be an identity'
+)
+
+# Two empties must stay empty, not become nan: exp(-inf - -inf) is nan, so the
+# exponent has to be pinned when the new max is not finite.
+me, le = logsumexp_merge(*EMPTY, *EMPTY)
+assert not jnp.isnan(me) and not jnp.isnan(le), (
+    f'Merging two empty states gave ({me}, {le}) — exp(-inf - -inf) is nan. '
+    'Guard the shift when the merged max is not finite.'
+)
+assert le == 0.0, f'Two empty states must stay empty, got l={le}'
+
+# A fold over many chunks must equal the one-shot reduction.
+chunks = [jnp.array([1.0, 2.0, 3.0]), jnp.array([100.0, 101.0]),
+          jnp.array([-50.0]), jnp.array([7.0, 7.5])]
+acc = EMPTY
+for c in chunks:
+    acc = logsumexp_merge(*acc, *state(c))
+folded = acc[0] + jnp.log(acc[1])
+want = jax.scipy.special.logsumexp(jnp.concatenate(chunks))
+assert jnp.allclose(folded, want, atol=1e-4), (
+    f'Folding chunk-by-chunk gave {folded}, one-shot gives {want}'
 )
 """,
         },
