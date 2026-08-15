@@ -285,6 +285,19 @@ def _aid_by_task(aid: list[dict[str, str]], attempts: list[dict[str, str]]) -> d
     return out
 
 
+# Tags that describe a STATE rather than a root cause. "I had no approach" can
+# be true of two unrelated problems without there being anything to drill — so
+# it stays in the per-task details and the counts, but grouping it as a habit
+# would be noise at the top of the file.
+NOT_A_PATTERN = {"no-approach"}
+
+_FREQ_RANK = {"🔥": 0, "⭐": 1, "💡": 2}
+_DIFF_RANK = {"Easy": 0, "Medium": 1, "Hard": 2}
+# Solving after reading the answer doesn't mean you own it, so it pushes a
+# problem up the redo queue rather than counting as a clean finish.
+_AID_WEIGHT = {"📖": 2, "💡": 1}
+_FREQ_WEIGHT = {"🔥": 1.5, "⭐": 1.2}
+
 REDO_LEGEND = (
     "**Redo?** 🔴 last round had mistakes and it's high-frequency · 🟡 had "
     "mistakes · ✅ last round was clean · 📝 practised but not logged yet · "
@@ -432,6 +445,74 @@ def build_dashboard() -> int:
             f"{solved} | {mistakes_cell} | {redo} |"
         )
 
+    # --- What to do next -------------------------------------------------
+    # Round 1 is a sweep of everything, alternating a JAX fundamental with an
+    # algorithm problem. Algorithms go hottest-first, and easiest-first inside a
+    # frequency tier, so the cheap high-frequency wins land early.
+    done = {t for t in tasks
+            if progress.get(t, {}).get("status") == "solved"
+            or any(a.get("solved") == "1" for a in attempts_by_task.get(t, []))}
+
+    algo_todo = sorted(
+        (t for t in problems if t not in done),
+        key=lambda t: (_FREQ_RANK.get(problems[t].get("frequency", ""), 3),
+                       _DIFF_RANK.get(problems[t].get("difficulty", ""), 3),
+                       problems[t].get("number", "")),
+    )
+    added_todo = sorted(
+        (t for t in added if t not in done),
+        key=lambda t: TASKS[t].get("number", ""),
+    )
+    sweep: list[str] = []
+    for i in range(max(len(added_todo), len(algo_todo))):
+        if i < len(added_todo):
+            sweep.append(added_todo[i])
+        if i < len(algo_todo):
+            sweep.append(algo_todo[i])
+
+    # Round 2+ is a different question: not "what haven't I done" but "what did
+    # I not actually learn". Mistakes last round, weighted up by how often the
+    # problem is asked and by whether the answer had to be read.
+    queue = []
+    for tid in done:
+        n = len(rounds.get(tid, []))
+        if not n:
+            continue
+        hrs = (now - rounds[tid][-1][-1]).total_seconds() / 3600
+        if hrs < ROUND_GAP.total_seconds() / 3600:
+            continue                       # still inside the same sitting
+        miss = len(mistakes_by_round.get((tid, n), []))
+        freq = problems.get(tid, {}).get("frequency", "")
+        score = (miss + _AID_WEIGHT.get(aid.get(tid, ""), 0)) * _FREQ_WEIGHT.get(freq, 1.0)
+        if score > 0:
+            queue.append((score, tid, miss, freq, aid.get(tid, ""), int(hrs // 24)))
+    queue.sort(key=lambda r: (-r[0], r[1]))
+
+    if sweep or queue:
+        lines.append("")
+        lines.append("## Next up")
+        if sweep:
+            lines.append("")
+            lines.append("**Round 1 sweep** — one JAX fundamental, then one algorithm "
+                          "problem; hottest first, easiest first within a tier.")
+            lines.append("")
+            lines.append(" · ".join(
+                f"`{_number_for(t, problems.get(t, {}))} {t}`" for t in sweep[:8]))
+        if queue:
+            lines.append("")
+            lines.append("**Ready for another round** — 24h+ since the last sitting, "
+                          "ranked by what stuck least (mistakes, weighted by how often "
+                          "it's asked and whether the answer had to be read).")
+            lines.append("")
+            for score, tid, miss, freq, a, days in queue[:6]:
+                bits = [f"{miss} mistake" + ("s" if miss != 1 else "")]
+                if a == "📖":
+                    bits.append("📖 read the solution")
+                elif a == "💡":
+                    bits.append("💡 needed a hint")
+                lines.append(f"- [`{tid}`](#mistake-{tid}) {freq} — {', '.join(bits)}, "
+                             f"{days}d ago")
+
     # Same root cause hit more than once — across rounds of one problem, or
     # across different problems entirely. The per-task Details can't show this:
     # each section only knows its own history, so a pattern spanning softmax and
@@ -439,6 +520,8 @@ def build_dashboard() -> int:
     # in the log. Worth drilling deliberately instead of waiting to meet again.
     by_tag: dict[str, list[tuple[str, int, int]]] = defaultdict(list)
     for m in mistakes:
+        if m.get("tag", "") in NOT_A_PATTERN:
+            continue
         by_tag[m.get("tag", "")].append(
             (m["task"], int(m.get("round") or 1), int(m.get("times_seen") or 1))
         )
