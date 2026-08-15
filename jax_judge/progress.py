@@ -89,14 +89,38 @@ def _default_study_dir() -> Path:
 
 _ATTEMPTS_FIELDS = ["timestamp", "task", "number", "attempt", "passed", "total", "elapsed_s", "solved"]
 
+_warned_no_study = False
+
+
+def _study_dir_or_none() -> Path | None:
+    """The study dir, or None — saying so once if it is not there.
+
+    Skipping silently is right when there simply is no study log. It is wrong
+    when the path is misconfigured, because then a solve looks recorded and
+    isn't: that happened when a notebook ran without the env file loaded, so
+    JAXCODE_STUDY_DIR fell back to a directory that no longer existed and a
+    whole problem's attempts vanished without a word. One dim line, once per
+    process, is enough to catch that while staying quiet for anyone who has
+    no study/ on purpose.
+    """
+    global _warned_no_study
+    study_dir = _default_study_dir()
+    if study_dir.is_dir():
+        return study_dir
+    if not _warned_no_study:
+        _warned_no_study = True
+        print(f"  {_DIM}(no study log at {study_dir} — attempts are not being "
+              f"recorded){_RESET}")
+    return None
+
 
 def log_attempt(task_id: str, passed: int, total: int, elapsed: float | None, solved: bool) -> None:
     """Append one row to study/attempts.csv. Best-effort: a broken or absent
     study/ directory must never break `check()` — this is a personal learning
     log, not part of the judge contract, so any failure here is swallowed."""
     try:
-        study_dir = _default_study_dir()
-        if not study_dir.is_dir():
+        study_dir = _study_dir_or_none()
+        if study_dir is None:
             return
 
         csv_path = study_dir / "attempts.csv"
@@ -139,8 +163,8 @@ def log_aid(task_id: str, kind: str) -> None:
     log_attempt() — never let the study log break the judge.
     """
     try:
-        study_dir = _default_study_dir()
-        if not study_dir.is_dir():
+        study_dir = _study_dir_or_none()
+        if study_dir is None:
             return
 
         csv_path = study_dir / "aid.csv"
