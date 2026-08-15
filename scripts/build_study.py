@@ -432,6 +432,45 @@ def build_dashboard() -> int:
             f"{solved} | {mistakes_cell} | {redo} |"
         )
 
+    # Same root cause hit more than once — across rounds of one problem, or
+    # across different problems entirely. The per-task Details can't show this:
+    # each section only knows its own history, so a pattern spanning softmax and
+    # layernorm is invisible there even though it is the most actionable thing
+    # in the log. Worth drilling deliberately instead of waiting to meet again.
+    by_tag: dict[str, list[tuple[str, int, int]]] = defaultdict(list)
+    for m in mistakes:
+        by_tag[m.get("tag", "")].append(
+            (m["task"], int(m.get("round") or 1), int(m.get("times_seen") or 1))
+        )
+    recurring = []
+    for tag, occ in by_tag.items():
+        total = sum(t for _, _, t in occ)
+        if total >= 2:
+            recurring.append((total, tag, occ))
+    recurring.sort(key=lambda r: (-r[0], r[1]))
+
+    if recurring:
+        lines.append("")
+        lines.append("## Recurring patterns")
+        lines.append("")
+        lines.append("Same root cause, hit more than once — most-repeated first. A pattern "
+                      "spanning two different problems is the strongest signal here: it is "
+                      "not that problem's quirk, it's a habit.")
+        lines.append("")
+        lines.append("| Times | Pattern | Where |")
+        lines.append("|---|---|---|")
+        for total, tag, occ in recurring:
+            per_task: dict[str, list[int]] = defaultdict(list)
+            for task, rnd, times in occ:
+                per_task[task].extend([rnd] * times)
+            where = " · ".join(
+                f"[`{t}`](#mistake-{t}) " + ", ".join(f"R{r}" for r in sorted(set(rs)))
+                + (f" ×{len(rs)}" if len(rs) > len(set(rs)) else "")
+                for t, rs in sorted(per_task.items())
+            )
+            across = " 🔁" if len(per_task) > 1 else ""
+            lines.append(f"| {total}{across} | `{tag}` | {where} |")
+
     if detailed:
         lines.append("")
         lines.append("## Details")
