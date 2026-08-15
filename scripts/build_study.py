@@ -63,7 +63,8 @@ TRIES_CSV = STUDY_DIR / "tries.csv"
 AID_CSV = STUDY_DIR / "aid.csv"
 MISTAKES_MD = STUDY_DIR / "MISTAKES.md"
 
-_PROBLEMS_FIELDS = ["number", "task", "function_name", "difficulty", "frequency", "key_concepts"]
+_PROBLEMS_FIELDS = ["order", "number", "task", "function_name", "difficulty", "frequency",
+                    "section", "key_concepts"]
 _ATTEMPTS_FIELDS = ["timestamp", "task", "number", "attempt", "passed", "total", "elapsed_s", "solved"]
 _ROW_RE = re.compile(r"^\|\s*\d+\s*\|")
 _BADGE_RE = re.compile(r"badge/(\w+)-")
@@ -103,7 +104,15 @@ def init_problems() -> int:
     readme = (ORIGINAL / "README.md").read_text().splitlines()
 
     rows: list[dict[str, str]] = []
+    section = ""
     for line in readme:
+        # The table is grouped into sections and ordered by difficulty inside
+        # each, NOT by problem number — 16 sits third, right after 01 and 02.
+        # That sequence is the author's teaching order, so record the position
+        # rather than re-deriving an order from difficulty later.
+        if line.startswith("### "):
+            section = line[4:].split("—")[0].strip()
+            continue
         if not _ROW_RE.match(line):
             continue
         cells = [c.strip() for c in line.strip().split("|")][1:-1]
@@ -116,11 +125,13 @@ def init_problems() -> int:
             continue
         m = _BADGE_RE.search(diff_badge)
         rows.append({
+            "order": f"{len(rows) + 1:02d}",
             "number": number,
             "task": tid,
             "function_name": TASKS.get(tid, {}).get("function_name", ""),
             "difficulty": m.group(1) if m else "",
             "frequency": freq,
+            "section": section,
             "key_concepts": concepts,
         })
 
@@ -130,7 +141,6 @@ def init_problems() -> int:
         return 1
 
     STUDY_DIR.mkdir(parents=True, exist_ok=True)
-    rows.sort(key=lambda r: r["number"])
     with open(PROBLEMS_CSV, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=_PROBLEMS_FIELDS)
         writer.writeheader()
@@ -292,11 +302,16 @@ def _aid_by_task(aid: list[dict[str, str]], attempts: list[dict[str, str]]) -> d
 NOT_A_PATTERN = {"no-approach"}
 
 _FREQ_RANK = {"🔥": 0, "⭐": 1, "💡": 2}
-_DIFF_RANK = {"Easy": 0, "Medium": 1, "Hard": 2}
+
 # Solving after reading the answer doesn't mean you own it, so it pushes a
 # problem up the redo queue rather than counting as a clean finish.
 _AID_WEIGHT = {"📖": 2, "💡": 1}
 _FREQ_WEIGHT = {"🔥": 1.5, "⭐": 1.2}
+# Knowledge decays, so an old shaky problem eventually outranks a recent one.
+# Saturating rather than unbounded: age should reorder the queue, never let a
+# one-mistake problem from last month outrank a five-mistake one from Tuesday.
+_AGE_HALF_LIFE_DAYS = 14.0
+_AGE_MAX = 2.0
 
 REDO_LEGEND = (
     "**Redo?** 🔴 last round had mistakes and it's high-frequency · 🟡 had "
@@ -453,11 +468,13 @@ def build_dashboard() -> int:
             if progress.get(t, {}).get("status") == "solved"
             or any(a.get("solved") == "1" for a in attempts_by_task.get(t, []))}
 
+    # Hottest tier first — every 🔥 gets done regardless — and within a tier,
+    # the original README's own row order, which already sequences foundations
+    # before specialisations.
     algo_todo = sorted(
         (t for t in problems if t not in done),
         key=lambda t: (_FREQ_RANK.get(problems[t].get("frequency", ""), 3),
-                       _DIFF_RANK.get(problems[t].get("difficulty", ""), 3),
-                       problems[t].get("number", "")),
+                       problems[t].get("order", "99")),
     )
     added_todo = sorted(
         (t for t in added if t not in done),
@@ -483,7 +500,12 @@ def build_dashboard() -> int:
             continue                       # still inside the same sitting
         miss = len(mistakes_by_round.get((tid, n), []))
         freq = problems.get(tid, {}).get("frequency", "")
-        score = (miss + _AID_WEIGHT.get(aid.get(tid, ""), 0)) * _FREQ_WEIGHT.get(freq, 1.0)
+        # Age lifts a stale problem up the queue without letting it overtake a
+        # genuinely shaky recent one: saturating at _AGE_MAX means the oldest
+        # possible problem is worth twice a same-day one, no more.
+        age = min(1.0 + (hrs / 24) / _AGE_HALF_LIFE_DAYS, _AGE_MAX)
+        score = ((miss + _AID_WEIGHT.get(aid.get(tid, ""), 0))
+                 * _FREQ_WEIGHT.get(freq, 1.0) * age)
         if score > 0:
             queue.append((score, tid, miss, freq, aid.get(tid, ""), int(hrs // 24)))
     queue.sort(key=lambda r: (-r[0], r[1]))
@@ -494,15 +516,19 @@ def build_dashboard() -> int:
         if sweep:
             lines.append("")
             lines.append("**Round 1 sweep** — one JAX fundamental, then one algorithm "
-                          "problem; hottest first, easiest first within a tier.")
+                          "problem; hottest first, and within a tier the original "
+                          "README's own order, which puts foundations before "
+                          "specialisations.")
             lines.append("")
             lines.append(" · ".join(
                 f"`{_number_for(t, problems.get(t, {}))} {t}`" for t in sweep[:8]))
         if queue:
             lines.append("")
             lines.append("**Ready for another round** — 24h+ since the last sitting, "
-                          "ranked by what stuck least (mistakes, weighted by how often "
-                          "it's asked and whether the answer had to be read).")
+                          "ranked by what stuck least: mistakes, weighted up by how "
+                          "often it's asked, whether the answer had to be read, and "
+                          "how long ago it was (doubling at "
+                          f"{int(_AGE_HALF_LIFE_DAYS)}d, then flat).")
             lines.append("")
             for score, tid, miss, freq, a, days in queue[:6]:
                 bits = [f"{miss} mistake" + ("s" if miss != 1 else "")]
