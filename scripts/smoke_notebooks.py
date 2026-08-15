@@ -51,10 +51,15 @@ def run_notebook(path: Path, timeout: int = 600, allow_errors: bool = False) -> 
     submit cell after it still has to reach the judge and print a verdict.
     """
     nb = nbformat.read(path, as_version=4)
-    # Progress writes go to a throwaway file so smoke runs never touch real data.
+    # Every solution notebook calls check(), so a smoke run is 50+ fake solves.
+    # Both sinks have to be redirected: PROGRESS_PATH was covered from the
+    # start, but log_attempt()/log_aid() arrived later and wrote 54 bogus rows
+    # into the real attempts.csv the first time this ran afterwards.
     with tempfile.TemporaryDirectory() as tmp:
         setup = nbformat.v4.new_code_cell(
-            f'import os; os.environ["PROGRESS_PATH"] = r"{Path(tmp) / "progress.json"}"'
+            "import os\n"
+            f'os.environ["PROGRESS_PATH"] = r"{Path(tmp) / "progress.json"}"\n'
+            f'os.environ["JAXCODE_STUDY_DIR"] = r"{tmp}"'
         )
         nb.cells.insert(0, setup)
         client = NotebookClient(

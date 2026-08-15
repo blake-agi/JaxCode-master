@@ -47,6 +47,10 @@ ADDED = {
     # Not a JAX-specific idea, but it has no counterpart in the PyTorch original
     # and the axis/keepdims discipline it drills is worth its own problem.
     "logsumexp",
+    # Whole-model assembly. The 41 stop at one GPT-2 block; the wiring bugs
+    # (RoPE placement, missing final norm, untied head) only appear once the
+    # pieces are put together.
+    "mini_gpt",
 }
 
 

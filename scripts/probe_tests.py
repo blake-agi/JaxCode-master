@@ -229,6 +229,24 @@ def logsumexp_merge(m1, l1, m2, l2):
     return m, l1 * jnp.exp(m1 - m) + l2 * jnp.exp(m2 - m)
 ''')))
 
+print(f"\n{BOLD}=== mini_gpt ==={RESET}")
+# The assembly bugs: each one runs, trains, and is a different model.
+from jax_judge.tasks import TASKS as _T
+_SOL = _T["mini_gpt"]["solution"]
+holes.append(("mini_gpt", probe("mini_gpt", "RoPE added to the embedding, not q/k",
+    _SOL.replace("q, k = apply_rope(q, positions), apply_rope(k, positions)", "pass")
+        .replace("x = self.tok_emb(ids)                      # no position added here",
+                 "x = apply_rope(self.tok_emb(ids), jnp.arange(ids.shape[1]))"))))
+holes.append(("mini_gpt", probe("mini_gpt", "v rotated as well as q/k",
+    _SOL.replace("q, k = apply_rope(q, positions), apply_rope(k, positions)",
+                 "q, k, v = apply_rope(q, positions), apply_rope(k, positions), apply_rope(v, positions)"))))
+holes.append(("mini_gpt", probe("mini_gpt", "no final norm before the head",
+    _SOL.replace("        x = self.norm_f(x)\n", ""))))
+holes.append(("mini_gpt", probe("mini_gpt", "untied head (separate Linear)",
+    _SOL.replace("self.norm_f = nnx.RMSNorm(d_model, rngs=rngs)",
+                 "self.norm_f = nnx.RMSNorm(d_model, rngs=rngs)\n        self.head = nnx.Linear(d_model, vocab_size, use_bias=False, rngs=rngs)")
+        .replace("return self.tok_emb.attend(x)", "return self.head(x)"))))
+
 print(f"\n{BOLD}=== cross_entropy ==={RESET}")
 holes.append(("cross_entropy", probe("cross_entropy", "log(softmax()) instead of log_softmax", '''
 import jax, jax.numpy as jnp
