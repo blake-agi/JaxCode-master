@@ -67,28 +67,48 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
    user's final version, in case a real gap survived even in the passing
    submission (e.g. missing dtype-safety, a less general einsum pattern).
 
+3b. **Find the round, and what was already tried.** Run:
+   ```bash
+   python scripts/build_study.py --rounds <task_id>
+   ```
+   It reports the current round, how long ago the last attempt was, and every
+   tag used in each previous round. A *round* is one sitting: several `check()`
+   calls in an evening are one round, and a gap of 24h or more starts the next.
+   The rule lives in that script — never re-derive it by eyeballing timestamps.
+
+   This is what makes the log worth keeping: "R1:5 R2:2" says the second pass
+   went better, which a running total cannot. So the round matters as much as
+   the mistake.
+
 4. **Distill each attempt into a mistake row.** One row per *distinct kind*
-   of error — collapse near-duplicates within the same notebook (e.g. two
+   of error — collapse near-duplicates within the same sitting (e.g. two
    `# !!!` markers about the same root cause are one row, not two). For each:
    - `tag`: short kebab-case slug, unique per root cause, e.g.
      `rank-hardcode`, `truthy-array-mask`, `mask-after-softmax`,
-     `einsum-fixed-rank`. Keep tags reusable across tasks where the mistake
-     is genuinely the same pattern (e.g. `truthy-array-mask` could recur in
-     a later task) — check existing tags in `study/mistakes.csv` first and
-     reuse one if it fits, rather than minting a near-duplicate.
+     `einsum-fixed-rank`. **Check the earlier rounds' tags from step 3b
+     first.** If this is the same root cause as a previous round, reuse that
+     exact tag — that is what surfaces it as a repeat, and a repeat is the
+     single most important thing this log can tell you. Only mint a new tag
+     for a genuinely different cause. Tags are also worth reusing across
+     tasks when the pattern is the same.
    - `what_went_wrong`: one sentence, concrete, in the user's own terms
      where possible (their comment is often already the best phrasing).
    - `fix`: one sentence, what the corrected code actually does differently.
 
 5. **Merge into `study/mistakes.csv`.** Fields:
-   `task,tag,what_went_wrong,fix,first_seen,times_seen`.
+   `task,round,tag,what_went_wrong,fix,first_seen,times_seen`.
    Read the existing CSV (via the `csv` module logic, or by hand — it's
-   small). For each distilled mistake:
-   - If a row with the same `(task, tag)` already exists, increment its
-     `times_seen` by 1 and leave `first_seen` untouched — do not add a new
-     row.
-   - Otherwise append a new row with `first_seen` = today's date
-     (`YYYY-MM-DD`) and `times_seen = 1`.
+   small). For each distilled mistake, using the round from step 3b:
+   - If a row with the same `(task, round, tag)` already exists — i.e. you
+     are adding to a sitting you already logged — increment its `times_seen`
+     and leave `first_seen` untouched.
+   - Otherwise append a new row with that `round`, `times_seen = 1`, and
+     `first_seen` = the date the mistake was FIRST made in any round (carry
+     it over from the earlier row when the tag is a repeat; today's date when
+     it is new).
+   **A repeated tag gets its own row in the new round — never edit the old
+   round's row.** The history of which round each mistake belongs to is the
+   whole point; collapsing them back into one row destroys it.
    Write the file back preserving the header and all untouched rows.
    If `study/` does not exist yet, create it — unlike the automatic
    `log_attempt()` path, this is a user-triggered action, so it's fine to
@@ -99,10 +119,17 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
    implementation. A commented final attempt still labelled e.g. `# try4`
    that then also appears live is the SAME attempt — don't count it twice.
    A notebook with zero commented attempts (solved clean) is `tries = 1`.
-   Write this to `study/tries.csv` (fields: `task,tries,updated_at`,
-   `updated_at` = today, `YYYY-MM-DD`). This file holds only the CURRENT
-   count per task, not a history — if a row for this task already exists,
-   overwrite it (replace the row), don't append a second one.
+   Note that on a later round the notebook usually holds only THAT round's
+   attempts, since you start from a fresh cell — count what is there.
+
+   Write this to `study/tries.csv` (fields: `task,round,tries,updated_at`,
+   `updated_at` = today, `YYYY-MM-DD`), one row per `(task, round)`: replace
+   the row if that pair already exists, otherwise append.
+
+   **Always write this row, even when there were no mistakes at all.** The
+   dashboard uses tries.csv as the receipt that a sitting was written up, so
+   a genuinely clean round shows as ✅ rather than 📝 "not logged yet". A
+   clean round is a result worth recording, not an absence of one.
 
 6b. **Backfill aid, only if it's missing.** `study/aid.csv`
    (`timestamp,task,kind` where kind is `hint` or `solution`) is normally
@@ -146,9 +173,15 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
    (tooling, this skill) are a separate concern — mention them and let the
    user decide.
 
-9. **Report back.** Print the mistakes you just recorded (new rows and
-   bumped `times_seen`), the try count, and the commit. Keep it short — a few
+9. **Report back.** Lead with the round and how it compares: "round 2, 2
+   mistakes, down from 5". Then the mistakes themselves. Keep it short — a few
    bullet points, not the whole CSV.
+
+   **Call out repeats explicitly.** A tag that also appeared in an earlier
+   round means the fix did not stick, which is worse than a fresh mistake and
+   is the thing most worth saying out loud. Do not bury it in a list.
+
+   Finish with the try count and the commit.
 
 ## What NOT to do
 

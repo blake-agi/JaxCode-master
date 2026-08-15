@@ -39,6 +39,7 @@ import os
 import re
 import sys
 from collections import defaultdict
+from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -218,6 +219,43 @@ def _notebook_link(tid: str, number: str) -> str | None:
     return os.path.relpath(nb, STUDY_DIR)
 
 
+ROUND_GAP = timedelta(hours=24)
+
+
+def _ts(row: dict[str, str]):
+    try:
+        return datetime.fromisoformat(row["timestamp"])
+    except (KeyError, ValueError):
+        return None
+
+
+def rounds_by_task(attempts: list[dict[str, str]]) -> dict[str, list[list[datetime]]]:
+    """task -> [[attempt times in round 1], [round 2], ...].
+
+    A round is one sitting. Practising a problem five times in an evening is
+    one round, not five — the mistakes made are all the same pass at it. A gap
+    of ROUND_GAP or more starts a new one, which is what makes "5 mistakes last
+    round, 2 this round" mean improvement rather than just more submissions.
+
+    Derived from timestamps rather than stored, so it cannot drift out of sync
+    with what actually happened.
+    """
+    times: dict[str, list[datetime]] = defaultdict(list)
+    for a in attempts:
+        t = _ts(a)
+        if t is not None:
+            times[a["task"]].append(t)
+
+    out: dict[str, list[list[datetime]]] = {}
+    for task, ts in times.items():
+        ts.sort()
+        groups = [[ts[0]]]
+        for prev, cur in zip(ts, ts[1:]):
+            (groups.append([cur]) if cur - prev >= ROUND_GAP else groups[-1].append(cur))
+        out[task] = groups
+    return out
+
+
 def _aid_by_task(aid: list[dict[str, str]], attempts: list[dict[str, str]]) -> dict[str, str]:
     """task -> aid marker, counting ONLY help taken before the first solve.
 
@@ -247,13 +285,51 @@ def _aid_by_task(aid: list[dict[str, str]], attempts: list[dict[str, str]]) -> d
     return out
 
 
+REDO_LEGEND = (
+    "**Redo?** 🔴 last round had mistakes and it's high-frequency · 🟡 had "
+    "mistakes · ✅ last round was clean · 📝 practised but not logged yet · "
+    "⏸ practised within 24h, a new round can't start yet · ⏳ not started."
+)
+
+
+def _redo_signal(*, n_attempt_rounds: int, last_logged_round: int,
+                 last_round_mistakes: int, frequency: str,
+                 hours_since_last: float | None) -> str:
+    """Whether this problem is worth another sitting.
+
+    A clean round means you own it — relu solved with no mistakes needs no
+    repetition, however often it comes up. Mistakes last time plus a high
+    interview frequency is the combination that earns a redo.
+    """
+    if n_attempt_rounds == 0:
+        return "⏳"
+    if n_attempt_rounds > last_logged_round:
+        return "📝"                       # the latest sitting was never logged
+    if last_round_mistakes == 0:
+        return "✅"
+    if hours_since_last is not None and hours_since_last < ROUND_GAP.total_seconds() / 3600:
+        return "⏸"                        # too soon for the next round to count
+    return "🔴" if frequency == "🔥" else "🟡"
+
+
 def build_dashboard() -> int:
     problems = {r["task"]: r for r in _read_csv(PROBLEMS_CSV)}
     attempts = _read_csv(ATTEMPTS_CSV)
     mistakes = _read_csv(MISTAKES_CSV)
-    tries_rows = {r["task"]: r for r in _read_csv(TRIES_CSV)}
+    tries_rows = _read_csv(TRIES_CSV)
     aid = _aid_by_task(_read_csv(AID_CSV), attempts)
     progress = _load_progress()
+    rounds = rounds_by_task(attempts)
+    now = datetime.now()
+
+    # (task, round) -> tries, and task -> highest round log-it has recorded.
+    # tries.csv doubles as the receipt that a sitting was actually logged, so a
+    # clean round is distinguishable from one nobody has written up yet.
+    tries_by_round = {(r["task"], int(r["round"] or 1)): r.get("tries", "")
+                      for r in tries_rows}
+    last_logged = defaultdict(int)
+    for r in tries_rows:
+        last_logged[r["task"]] = max(last_logged[r["task"]], int(r["round"] or 1))
 
     # problems.csv only has the 41 ported problems (parsed off the original
     # README, which obviously doesn't know about JAX-only additions). Pull
@@ -268,6 +344,12 @@ def build_dashboard() -> int:
     mistakes_by_task: dict[str, list[dict[str, str]]] = defaultdict(list)
     for m in mistakes:
         mistakes_by_task[m["task"]].append(m)
+
+    # (task, round) -> mistakes, so the table can show the trend across rounds
+    # and the details can lead with the most recent sitting.
+    mistakes_by_round: dict[tuple[str, int], list[dict[str, str]]] = defaultdict(list)
+    for m in mistakes:
+        mistakes_by_round[(m["task"], int(m.get("round") or 1))].append(m)
 
     tasks = sorted(
         set(problems) | added | set(attempts_by_task) | set(mistakes_by_task) | set(progress),
@@ -292,11 +374,15 @@ def build_dashboard() -> int:
                   "`mistakes.csv` / `tries.csv` / `aid.csv`. Do not edit by hand — re-run the "
                   "script instead.")
     lines.append("")
-    lines.append("Attempts = `check()` calls · Try = your own try1..tryN notes · "
-                  "Aid = 💡 hint or 📖 solution read **before** first solving.")
+    lines.append("Attempts = `check()` calls · Try = your own try1..tryN notes in the "
+                  "latest round · Aid = 💡 hint or 📖 solution read **before** first "
+                  "solving · Mistakes = per round, so R1:5 R2:2 means you improved. "
+                  "A round is one sitting; 24h apart starts a new one.")
     lines.append("")
-    lines.append("| # | Task | Tag | Difficulty | Freq | Attempts | Try | Aid | Solved | Mistakes |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|")
+    lines.append(REDO_LEGEND)
+    lines.append("")
+    lines.append("| # | Task | Tag | Difficulty | Freq | Attempts | Try | Aid | Solved | Mistakes | Redo? |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
     for tid in tasks:
         p = problems.get(tid, {})
         number = _number_for(tid, p)
@@ -313,18 +399,37 @@ def build_dashboard() -> int:
         )
         solved = "✅" if is_solved else ("🔧" if attempt_rows or progress.get(tid) else "⏳")
         n_attempts = max(len(attempt_rows), progress.get(tid, {}).get("attempts", 0))
-        n_mistakes = len(mistakes_by_task.get(tid, []))
-        # "Try" is your own try1/try2/... note count from the notebook, kept
-        # by the log-mistake skill — separate from "Attempts" (check() calls)
-        # since the two count genuinely different things. Blank until logged.
-        try_count = tries_rows.get(tid, {}).get("tries", "")
+
+        task_rounds = rounds.get(tid, [])
+        n_rounds = len(task_rounds)
+        # "R1:5 R2:2" — the whole trajectory, so a drop is visible at a glance.
+        per_round = " ".join(
+            f"R{i}:{len(mistakes_by_round.get((tid, i), []))}"
+            for i in range(1, n_rounds + 1)
+        ) or ""
+        mistakes_cell = f"[{per_round}](#mistake-{tid})" if per_round and tid in detailed_set else per_round
+
+        last_round_mistakes = len(mistakes_by_round.get((tid, n_rounds), [])) if n_rounds else 0
+        hours_since = ((now - task_rounds[-1][-1]).total_seconds() / 3600) if n_rounds else None
+        redo = _redo_signal(
+            n_attempt_rounds=n_rounds,
+            last_logged_round=last_logged.get(tid, 0),
+            last_round_mistakes=last_round_mistakes,
+            frequency=frequency or "",
+            hours_since_last=hours_since,
+        )
+
+        # "Try" is your own try1/try2/... note count, for the latest round —
+        # separate from "Attempts" (check() calls) since the two count
+        # genuinely different things. Blank until logged.
+        try_count = tries_by_round.get((tid, n_rounds), "") if n_rounds else ""
         # Task name jumps to its Details entry, when it has one — the
         # notebook link itself only lives in Details, not here.
         task_cell = f"[`{tid}`](#mistake-{tid})" if tid in detailed_set else f"`{tid}`"
         lines.append(
             f"| {number or '??'} | {task_cell} | {tag} | {difficulty} | "
             f"{frequency} | {n_attempts} | {try_count} | {aid.get(tid, '')} | "
-            f"{solved} | {n_mistakes} |"
+            f"{solved} | {mistakes_cell} | {redo} |"
         )
 
     if detailed:
@@ -343,11 +448,30 @@ def build_dashboard() -> int:
             if not task_mistakes:
                 lines.append("_No mistakes logged yet._")
                 continue
-            for m in sorted(task_mistakes, key=lambda r: -int(r.get("times_seen", 1))):
-                seen = m.get("times_seen", "1")
-                lines.append(f"- **{m.get('tag', '')}** ({seen}x) — {m.get('what_went_wrong', '')}")
-                if m.get("fix"):
-                    lines.append(f"  - fix: {m['fix']}")
+
+            n_rounds = max(len(rounds.get(tid, [])), last_logged.get(tid, 0))
+            # Newest round first: what you got wrong most recently is what you
+            # need, and earlier rounds are context underneath it.
+            for rnd in range(n_rounds, 0, -1):
+                group = mistakes_by_round.get((tid, rnd), [])
+                when = ""
+                if rnd <= len(rounds.get(tid, [])):
+                    when = f" · {rounds[tid][rnd - 1][0]:%Y-%m-%d}"
+                lines.append("")
+                lines.append(f"**Round {rnd}**{when} — "
+                             + (f"{len(group)} mistake(s)" if group else "clean"))
+                for m in sorted(group, key=lambda r: -int(r.get("times_seen", 1) or 1)):
+                    tag = m.get("tag", "")
+                    seen = m.get("times_seen", "1")
+                    # Same tag in an earlier round means it did NOT stick —
+                    # worse than a fresh mistake, so say so on the line itself.
+                    earlier = [r for r in range(1, rnd)
+                               if any(x.get("tag") == tag for x in mistakes_by_round.get((tid, r), []))]
+                    again = f" ⚠️ **again** (also R{', R'.join(map(str, earlier))})" if earlier else ""
+                    times = f" ({seen}x this round)" if int(seen or 1) > 1 else ""
+                    lines.append(f"- **{tag}**{times}{again} — {m.get('what_went_wrong', '')}")
+                    if m.get("fix"):
+                        lines.append(f"  - fix: {m['fix']}")
 
     STUDY_DIR.mkdir(parents=True, exist_ok=True)
     MISTAKES_MD.write_text("\n".join(lines) + "\n")
@@ -427,17 +551,60 @@ def _update_readme(tasks, problems, progress, attempts_by_task) -> None:
     print(f"  {DIM}{done}/{total} solved{RESET}\n")
 
 
+def show_rounds(task: str | None) -> int:
+    """What round each task is in, and which tags it has already used.
+
+    The log-it skill calls this so the 24h rule lives in exactly one place:
+    it needs the round to stamp on new rows, and the earlier tags to decide
+    whether today's mistake is a repeat or something new.
+    """
+    attempts = _read_csv(ATTEMPTS_CSV)
+    rounds = rounds_by_task(attempts)
+    mistakes = _read_csv(MISTAKES_CSV)
+    logged = defaultdict(int)
+    for r in _read_csv(TRIES_CSV):
+        logged[r["task"]] = max(logged[r["task"]], int(r["round"] or 1))
+
+    tags: dict[tuple[str, int], list[str]] = defaultdict(list)
+    for m in mistakes:
+        tags[(m["task"], int(m.get("round") or 1))].append(m.get("tag", ""))
+
+    now = datetime.now()
+    names = [task] if task else sorted(rounds, key=lambda t: rounds[t][-1][-1], reverse=True)
+    for t in names:
+        rs = rounds.get(t, [])
+        if not rs:
+            print(f"{t}: no attempts recorded — round would be 1")
+            continue
+        cur, last = len(rs), rs[-1][-1]
+        hrs = (now - last).total_seconds() / 3600
+        state = ("this round is still open — log into it"
+                 if hrs < ROUND_GAP.total_seconds() / 3600
+                 else f"a new sitting now would be round {cur + 1}")
+        print(f"\n{BOLD}{t}{RESET}: current round {cur} "
+              f"({len(rs[-1])} attempts, last {hrs:.1f}h ago)")
+        print(f"  logged up to round {logged.get(t, 0)} · {state}")
+        for i in range(1, cur + 1):
+            got = tags.get((t, i), [])
+            print(f"  {DIM}R{i}: {', '.join(got) if got else '(clean)'}{RESET}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--init-problems", action="store_true",
                      help="(re)build problems.csv from the original README")
     ap.add_argument("--backfill-from-progress", action="store_true",
                      help="seed attempts.csv with tasks solved before log_attempt() existed")
+    ap.add_argument("--rounds", nargs="?", const="", metavar="TASK",
+                     help="show the current round and past tags (all tasks, or one)")
     args = ap.parse_args()
     if args.init_problems:
         return init_problems()
     if args.backfill_from_progress:
         return backfill_from_progress()
+    if args.rounds is not None:
+        return show_rounds(args.rounds or None)
     return build_dashboard()
 
 
