@@ -10,6 +10,9 @@ Same diff-against-_pristine logic as refresh_notebooks.py uses to decide what
 is safe to overwrite; a notebook with no pristine baseline yet is skipped
 (nothing to compare against) rather than guessed at.
 
+Empty output is meaningful — it means nothing has been edited — so a missing
+directory must NOT produce it. See _require_dirs().
+
     python scripts/list_edited_notebooks.py            # task ids, newest first
     python scripts/list_edited_notebooks.py --paths    # full notebook paths
 """
@@ -18,15 +21,17 @@ from __future__ import annotations
 
 import argparse
 import filecmp
-import os
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# Optional override so your working notebooks can live outside this checkout
-# (e.g. in a private practice repo). Unset — as in any fresh clone — this is
-# exactly ROOT/notebooks, so nothing changes for anyone else.
-WORK = Path(os.environ.get("JAXCODE_NOTEBOOKS_DIR") or ROOT / "notebooks")
+sys.path.insert(0, str(ROOT))
+
+from _paths import notebooks_dir, notebooks_dir_problem  # noqa: E402
+from jax_judge._term import DIM, RED, RESET  # noqa: E402
+
+WORK = notebooks_dir()
 PRISTINE = WORK / "_pristine"
 
 # "05_attention" -> "attention", but "b_01_grad_basics" -> "grad_basics" — the
@@ -56,6 +61,16 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--paths", action="store_true", help="print full paths instead of task ids")
     args = ap.parse_args()
+
+    # Fatal, not a warning: printing nothing is how this script says "no
+    # notebook has been edited", and log-it stops on that. A wrong directory
+    # must never be able to say the same thing.
+    problem = notebooks_dir_problem(require_pristine=True)
+    if problem:
+        print(f"{RED}{problem}{RESET}", file=sys.stderr)
+        print(f"  {DIM}(refusing to print an empty list that would read as "
+              f"'nothing to log'){RESET}", file=sys.stderr)
+        return 2
 
     for nb in edited_notebooks():
         print(nb if args.paths else task_id_of(nb.stem))

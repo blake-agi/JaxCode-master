@@ -45,7 +45,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from _paths import original_repo  # noqa: E402
+from _paths import notebooks_dir, notebooks_dir_problem, original_repo  # noqa: E402
 from jax_judge._term import BOLD, DIM, GREEN, RED, RESET, YELLOW  # noqa: E402
 from jax_judge.progress import PROGRESS_PATH  # noqa: E402
 from jax_judge.tasks import TASKS  # noqa: E402
@@ -53,10 +53,7 @@ from jax_judge.tasks import TASKS  # noqa: E402
 ORIGINAL = original_repo()
 STUDY_DIR = Path(os.environ.get("JAXCODE_STUDY_DIR", ROOT.parent / "study"))
 _STUDY_FROM_ENV = bool(os.environ.get("JAXCODE_STUDY_DIR"))
-# Optional override so your working notebooks can live outside this checkout
-# (e.g. in a private practice repo). Unset — as in any fresh clone — this is
-# exactly ROOT/notebooks, so nothing changes for anyone else.
-NOTEBOOKS_DIR = Path(os.environ.get("JAXCODE_NOTEBOOKS_DIR") or ROOT / "notebooks")
+NOTEBOOKS_DIR = notebooks_dir()
 
 PROBLEMS_CSV = STUDY_DIR / "problems.csv"
 ATTEMPTS_CSV = STUDY_DIR / "attempts.csv"
@@ -779,6 +776,18 @@ def main() -> int:
     ap.add_argument("--rounds", nargs="?", const="", metavar="TASK",
                      help="show the current round and past tags (all tasks, or one)")
     args = ap.parse_args()
+
+    # Warn, never fail: NOTEBOOKS_DIR is only consulted for "does this notebook
+    # exist" links, so a wrong path costs links in MISTAKES.md and the README
+    # progress block — the dashboard itself still builds from the CSVs.
+    # require_exists stays off so CI, which legitimately has no notebooks, is
+    # not nagged; an unloaded .env is a real mistake and still warns.
+    nb_problem = notebooks_dir_problem(require_exists=False)
+    if nb_problem:
+        print(f"{YELLOW}{nb_problem}{RESET}", file=sys.stderr)
+        print(f"  {DIM}(continuing — notebook links will be omitted){RESET}",
+              file=sys.stderr)
+
     if args.init_problems:
         return init_problems()
     if not _study_data_exists():

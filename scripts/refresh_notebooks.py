@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import filecmp
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -22,12 +21,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from _paths import notebooks_dir, notebooks_dir_problem  # noqa: E402
 from jax_judge._term import BOLD, DIM, GREEN, RED, RESET, YELLOW  # noqa: E402
 
-# Optional override so your working notebooks can live outside this checkout
-# (e.g. in a private practice repo). Unset — as in any fresh clone — this is
-# exactly ROOT/notebooks, so nothing changes for anyone else.
-WORK = Path(os.environ.get("JAXCODE_NOTEBOOKS_DIR") or ROOT / "notebooks")
+WORK = notebooks_dir()
 PRISTINE = WORK / "_pristine"
 SOLUTIONS = WORK / "_solutions"
 
@@ -37,6 +34,19 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="overwrite edited notebooks too")
     ap.add_argument("--list", action="store_true", help="report only, change nothing")
     args = ap.parse_args()
+
+    # This script CREATES WORK, so it must not demand the directory already
+    # exist — a fresh clone has no notebooks/ and generating it is the whole
+    # point. require_pristine is likewise off: it makes _pristine too.
+    # What it must never do is create the tree at the WRONG path, silently
+    # filling this repo with 58 templates while your real notebooks sit
+    # untouched in the practice repo. That is exactly the unloaded-.env case.
+    problem = notebooks_dir_problem(require_exists=False)
+    if problem:
+        print(f"{RED}{problem}{RESET}", file=sys.stderr)
+        print(f"  {DIM}(refusing to create a notebook tree at a path you did "
+              f"not mean){RESET}", file=sys.stderr)
+        return 2
 
     WORK.mkdir(exist_ok=True)
     PRISTINE.mkdir(exist_ok=True)
