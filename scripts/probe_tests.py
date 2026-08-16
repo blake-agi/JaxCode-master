@@ -358,6 +358,101 @@ def cross_entropy_loss(logits, labels, *, label_smoothing=0.0, ignore_index=-1):
     return jnp.sum(jnp.where(valid, per, 0.0)) / jnp.sum(valid)
 ''')))
 
+print(f"\n{BOLD}=== masked_diffusion (b_16) ==={RESET}")
+holes.append(("masked_diffusion", probe(
+    "masked_diffusion", "averages over the MASKED tokens instead of the length", '''
+import jax, jax.numpy as jnp
+def q_sample(key, x0, t, *, mask_id):
+    return jnp.where(jax.random.uniform(key, x0.shape) < t[..., None], mask_id, x0)
+def masked_diffusion_loss(logits, x0, xt, t, *, mask_id):
+    lp = jax.nn.log_softmax(logits.at[..., mask_id].set(-jnp.inf), axis=-1)
+    nll = -jnp.take_along_axis(lp, x0[..., None], axis=-1)[..., 0]
+    m = xt == mask_id
+    n = jnp.maximum(jnp.sum(m, axis=-1), 1)
+    return jnp.mean(jnp.sum(jnp.where(m, nll, 0.0), axis=-1) / n / t)
+''', symbol=None)))
+holes.append(("masked_diffusion", probe(
+    "masked_diffusion", "drops the 1/t weight", '''
+import jax, jax.numpy as jnp
+def q_sample(key, x0, t, *, mask_id):
+    return jnp.where(jax.random.uniform(key, x0.shape) < t[..., None], mask_id, x0)
+def masked_diffusion_loss(logits, x0, xt, t, *, mask_id):
+    lp = jax.nn.log_softmax(logits.at[..., mask_id].set(-jnp.inf), axis=-1)
+    nll = -jnp.take_along_axis(lp, x0[..., None], axis=-1)[..., 0]
+    m = xt == mask_id
+    return jnp.mean(jnp.sum(jnp.where(m, nll, 0.0), axis=-1) / x0.shape[-1])
+''')))
+holes.append(("masked_diffusion", probe(
+    "masked_diffusion", "zeroes the MASK probability AFTER the softmax", '''
+import jax, jax.numpy as jnp
+def q_sample(key, x0, t, *, mask_id):
+    return jnp.where(jax.random.uniform(key, x0.shape) < t[..., None], mask_id, x0)
+def masked_diffusion_loss(logits, x0, xt, t, *, mask_id):
+    p = jax.nn.softmax(logits, axis=-1).at[..., mask_id].set(0.0)
+    nll = -jnp.log(jnp.take_along_axis(p, x0[..., None], axis=-1)[..., 0])
+    m = xt == mask_id
+    return jnp.mean(jnp.sum(jnp.where(m, nll, 0.0), axis=-1) / x0.shape[-1] / t)
+''')))
+holes.append(("masked_diffusion", probe(
+    "masked_diffusion", "q_sample masks a fixed count per sequence", '''
+import jax, jax.numpy as jnp
+def q_sample(key, x0, t, *, mask_id):
+    L = x0.shape[-1]
+    order = jax.random.permutation(key, L)[None, :]
+    k = jnp.round(t * L)[..., None]
+    return jnp.where(order < k, mask_id, x0)
+def masked_diffusion_loss(logits, x0, xt, t, *, mask_id):
+    lp = jax.nn.log_softmax(logits.at[..., mask_id].set(-jnp.inf), axis=-1)
+    nll = -jnp.take_along_axis(lp, x0[..., None], axis=-1)[..., 0]
+    m = xt == mask_id
+    return jnp.mean(jnp.sum(jnp.where(m, nll, 0.0), axis=-1) / x0.shape[-1] / t)
+''')))
+
+print(f"\n{BOLD}=== diffusion_sampling (b_17) ==={RESET}")
+holes.append(("diffusion_sampling", probe(
+    "diffusion_sampling", "unmask probability is the difference, not the ratio", '''
+import jax, jax.numpy as jnp
+def denoise_step(key, logits, xt, t, s, *, mask_id):
+    logits = logits.at[..., mask_id].set(-jnp.inf)
+    ku, kt = jax.random.split(key)
+    reveal = jax.random.bernoulli(ku, t - s, xt.shape) & (xt == mask_id)
+    return jnp.where(reveal, jax.random.categorical(kt, logits, axis=-1), xt)
+''')))
+holes.append(("diffusion_sampling", probe(
+    "diffusion_sampling", "one Bernoulli for the whole batch", '''
+import jax, jax.numpy as jnp
+def denoise_step(key, logits, xt, t, s, *, mask_id):
+    logits = logits.at[..., mask_id].set(-jnp.inf)
+    ku, kt = jax.random.split(key)
+    reveal = jax.random.bernoulli(ku, (t - s) / t) & (xt == mask_id)
+    return jnp.where(reveal, jax.random.categorical(kt, logits, axis=-1), xt)
+''')))
+holes.append(("diffusion_sampling", probe(
+    "diffusion_sampling", "resamples every position, ignoring carry-over", '''
+import jax, jax.numpy as jnp
+def denoise_step(key, logits, xt, t, s, *, mask_id):
+    logits = logits.at[..., mask_id].set(-jnp.inf)
+    ku, kt = jax.random.split(key)
+    reveal = jax.random.bernoulli(ku, (t - s) / t, xt.shape)
+    return jnp.where(reveal, jax.random.categorical(kt, logits, axis=-1), xt)
+''')))
+holes.append(("diffusion_sampling", probe(
+    "diffusion_sampling", "lets the model emit [MASK]", '''
+import jax, jax.numpy as jnp
+def denoise_step(key, logits, xt, t, s, *, mask_id):
+    ku, kt = jax.random.split(key)
+    reveal = jax.random.bernoulli(ku, (t - s) / t, xt.shape) & (xt == mask_id)
+    return jnp.where(reveal, jax.random.categorical(kt, logits, axis=-1), xt)
+''')))
+holes.append(("diffusion_sampling", probe(
+    "diffusion_sampling", "takes the argmax instead of sampling", '''
+import jax, jax.numpy as jnp
+def denoise_step(key, logits, xt, t, s, *, mask_id):
+    logits = logits.at[..., mask_id].set(-jnp.inf)
+    reveal = jax.random.bernoulli(key, (t - s) / t, xt.shape) & (xt == mask_id)
+    return jnp.where(reveal, jnp.argmax(logits, axis=-1), xt)
+''')))
+
 print(f"\n{BOLD}{'='*60}{RESET}")
 real_holes = [t for t, ok in holes if ok is True]
 if real_holes:

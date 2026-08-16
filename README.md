@@ -181,7 +181,7 @@ reporting a diff.
 ## 📚 Problems
 
 <!-- PROBLEMS:START -->
-**56 problems** — 🟢 13 Easy · 🟡 22 Medium · 🔴 21 Hard
+**58 problems** — 🟢 13 Easy · 🟡 24 Medium · 🔴 21 Hard
 
 
 ### JAX Fundamentals (11)
@@ -238,7 +238,7 @@ reporting a diff.
 | 28 | [Mixture of Experts (MoE)](templates/28_moe.ipynb) | 🔴 Hard | `moe` |
 | b_13 | [Mini GPT — assemble the whole model](templates/b_13_mini_gpt.ipynb) | 🔴 Hard | `mini_gpt` |
 
-### Training (8)
+### Training (9)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -250,8 +250,9 @@ reporting a diff.
 | 40 | [Linear Regression](templates/40_linear_regression.ipynb) | 🟡 Medium | `linear_regression` |
 | b_14 | [Cross-Entropy Without logsumexp](templates/b_14_cross_entropy_fused.ipynb) | 🟡 Medium | `cross_entropy_fused` |
 | b_15 | [Cross-Entropy: Smoothing & Padding Mask](templates/b_15_cross_entropy_full.ipynb) | 🟡 Medium | `cross_entropy_full` |
+| b_16 | [Masked Diffusion LM Loss](templates/b_16_masked_diffusion.ipynb) | 🟡 Medium | `masked_diffusion` |
 
-### Inference & Decoding (5)
+### Inference & Decoding (6)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -260,6 +261,7 @@ reporting a diff.
 | 34 | [Speculative Decoding](templates/34_speculative_decoding.ipynb) | 🔴 Hard | `speculative_decoding` |
 | 35 | [Byte-Pair Encoding (BPE)](templates/35_bpe.ipynb) | 🔴 Hard | `bpe` |
 | 36 | [INT8 Quantized Linear](templates/36_int8_quantization.ipynb) | 🔴 Hard | `int8_quantization` |
+| b_17 | [Masked Diffusion Sampling Step](templates/b_17_diffusion_sampling.ipynb) | 🟡 Medium | `diffusion_sampling` |
 
 ### RLHF & Preference Losses (4)
 

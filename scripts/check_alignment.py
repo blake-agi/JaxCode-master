@@ -53,6 +53,11 @@ ADDED = {
     # original.
     "cross_entropy_fused",
     "cross_entropy_full",
+    # Diffusion language models postdate the PyTorch original entirely. The
+    # loss is the masked-CE the 16 -> b_14 -> b_15 chain builds up to; the
+    # sampler is where the absorbing posterior earns its keep.
+    "masked_diffusion",
+    "diffusion_sampling",
     # Whole-model assembly. The 41 stop at one GPT-2 block; the wiring bugs
     # (RoPE placement, missing final norm, untied head) only appear once the
     # pieces are put together.
