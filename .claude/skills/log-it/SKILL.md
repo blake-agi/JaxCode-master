@@ -80,9 +80,20 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
    went better, which a running total cannot. So the round matters as much as
    the mistake.
 
-4. **Distill each attempt into a mistake row.** One row per *distinct kind*
-   of error — collapse near-duplicates within the same sitting (e.g. two
-   `# !!!` markers about the same root cause are one row, not two). For each:
+4. **Distill each attempt into a mistake row.** One row per *distinct root
+   cause*. **Every `# !!!` note earns a row** — those notes are the whole
+   reason this log exists, and whether one was strictly a *bug* is not yours
+   to judge. Two things follow that are easy to get wrong:
+   - A note on code that **passed** still counts. "This version works but is
+     locked to 2 dims", "`[..., 0]` is silent, `.squeeze(-1)` is not" — the
+     row records what the earlier version got wrong and what the later one
+     does better. A refactor the user made *after* going green is a finding,
+     not an absence of one.
+   - The only reason to merge two notes is the **same root cause in the same
+     sitting** (e.g. two `# !!!` markers about one bad index). Different
+     causes stay separate however small they look.
+
+   For each row:
    - `tag`: short kebab-case slug, unique per root cause, e.g.
      `rank-hardcode`, `truthy-array-mask`, `mask-after-softmax`,
      `einsum-fixed-rank`. **Check the earlier rounds' tags from step 3b
@@ -105,7 +116,9 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
    - Otherwise append a new row with that `round`, `times_seen = 1`, and
      `first_seen` = the date the mistake was FIRST made in any round (carry
      it over from the earlier row when the tag is a repeat; today's date when
-     it is new).
+     it is new). Carry it across TASKS too: a tag reused on a different
+     problem is the same habit, and its `first_seen` should still say when
+     that habit first bit — that is what the Recurring patterns table reads.
    **A repeated tag gets its own row in the new round — never edit the old
    round's row.** The history of which round each mistake belongs to is the
    whole point; collapsing them back into one row destroys it.
@@ -188,8 +201,14 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
 - Don't run this automatically on every `check()` call — the user explicitly
   does not want per-submit summarization. It only runs when triggered.
 - Don't invent a mistake that isn't actually evidenced in the notebook's
-  comments/history — if the user solved it clean on try 1, say so and log
-  nothing.
+  comments/history — if the user solved it clean on try 1 with no `# !!!`
+  notes, say so and log nothing.
+- But don't *drop* one either. A `# !!!` note is evidence by definition, and
+  "that wasn't really a bug, it already passed" is not a reason to skip it —
+  that call has been made wrongly before, and the notes it discarded were the
+  best material of the sitting. When in doubt, log the row; a duplicate root
+  cause merges by tag anyway, so the cost of over-logging is near zero and the
+  cost of under-logging is a lost lesson.
 - Don't touch `study/attempts.csv` or `study/problems.csv` — those belong to
   `jax_judge.progress.log_attempt()` and `scripts/build_study.py
   --init-problems` respectively. This skill owns `study/tries.csv` and
