@@ -46,10 +46,12 @@ ADDED = {
     # Not a JAX-specific idea, but it has no counterpart in the PyTorch original
     # and the axis/keepdims discipline it drills is worth its own problem.
     "logsumexp",
-    # The second half of cross-entropy: label smoothing and the padding mask.
-    # It used to be bolted onto problem 16, which made one "Easy" problem carry
-    # three separate ideas. 16 is now the original's plain loss; this is the
-    # production version, and it has no counterpart in the original either.
+    # Cross-entropy used to be one "Easy" problem carrying three ideas. It is
+    # now a ladder: 16 is the original's problem (logsumexp allowed, as the
+    # original's own rules say), b_14 takes logsumexp away, b_15 adds label
+    # smoothing and the padding mask. Neither addition has a counterpart in the
+    # original.
+    "cross_entropy_fused",
     "cross_entropy_full",
     # Whole-model assembly. The 41 stop at one GPT-2 block; the wiring bugs
     # (RoPE placement, missing final norm, untied head) only appear once the

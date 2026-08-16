@@ -262,8 +262,42 @@ def cross_entropy_loss(logits, labels):
     lp = logits - jax.scipy.special.logsumexp(logits, axis=-1, keepdims=True)
     return -jnp.sum(jnp.take_along_axis(lp, labels[:, None], axis=-1))
 ''')))
+holes.append(("cross_entropy", probe("cross_entropy", "logits[labels] indexes rows, not one per row", '''
+import jax, jax.numpy as jnp
+def cross_entropy_loss(logits, labels):
+    return jnp.mean(jax.scipy.special.logsumexp(logits, axis=-1) - logits[labels])
+''')))
 
-print(f"\n{BOLD}=== cross_entropy_full ==={RESET}")
+print(f"\n{BOLD}=== cross_entropy_fused (b_14: logsumexp banned) ==={RESET}")
+# The ban itself is not probeable here: it is enforced by reading the function's
+# source, and attacks are exec'd from strings, where inspect.getsource has
+# nothing to read. That test deliberately no-ops rather than failing everyone in
+# CI. Its live behaviour is covered by scripts/smoke_notebooks.py --banned.
+holes.append(("cross_entropy_fused", probe(
+    "cross_entropy_fused", "no max shift: exp() overflows", '''
+import jax, jax.numpy as jnp
+def cross_entropy_loss(logits, labels):
+    lse = jnp.log(jnp.sum(jnp.exp(logits), axis=-1))
+    return jnp.mean(lse - jnp.take_along_axis(logits, labels[:, None], axis=-1)[:, 0])
+''')))
+holes.append(("cross_entropy_fused", probe(
+    "cross_entropy_fused", "shift subtracted but never added back", '''
+import jax, jax.numpy as jnp
+def cross_entropy_loss(logits, labels):
+    m = jnp.max(logits, axis=-1, keepdims=True)
+    lse = jnp.log(jnp.sum(jnp.exp(logits - m), axis=-1, keepdims=True))
+    return jnp.mean(lse - jnp.take_along_axis(logits, labels[:, None], axis=-1))
+''')))
+holes.append(("cross_entropy_fused", probe(
+    "cross_entropy_fused", "max/sum without keepdims: broadcasts over the batch axis", '''
+import jax, jax.numpy as jnp
+def cross_entropy_loss(logits, labels):
+    m = jnp.max(logits, axis=-1)
+    lse = m + jnp.log(jnp.sum(jnp.exp(logits - m), axis=-1))
+    return jnp.mean(lse - jnp.take_along_axis(logits, labels[:, None], axis=-1)[:, 0])
+''')))
+
+print(f"\n{BOLD}=== cross_entropy_full (b_15) ==={RESET}")
 holes.append(("cross_entropy_full", probe(
     "cross_entropy_full", "log(softmax()) instead of log_softmax", '''
 import jax, jax.numpy as jnp

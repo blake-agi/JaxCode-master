@@ -8,6 +8,12 @@ demo cell, and the submit cell that calls check().
     python scripts/smoke_notebooks.py              # all solution notebooks
     python scripts/smoke_notebooks.py 01 05 12     # just these numbers
     python scripts/smoke_notebooks.py --templates  # blank templates must not crash
+    python scripts/smoke_notebooks.py --banned     # banned_examples must be REJECTED
+
+--banned exists because a handful of problems are defined by what you may not
+call, and the judge enforces that by reading the submitted function's source.
+probe_tests.py cannot cover it: it execs attacks from strings, where
+inspect.getsource has nothing to read. Only a real kernel does.
 """
 
 from __future__ import annotations
@@ -76,12 +82,84 @@ def run_notebook(path: Path, timeout: int = 600, allow_errors: bool = False) -> 
         return True, _outputs_text(nb)
 
 
+IMPL_MARKER = "# ✏️ YOUR IMPLEMENTATION HERE"
+
+
+def _all_passed(text: str) -> bool:
+    """The judge's all-pass verdict. A partial pass prints "5/6 tests passed",
+    so matching "tests passed" alone reads a failure as a success."""
+    return "All" in text and "tests passed" in text
+
+
+def run_banned() -> int:
+    """Every `banned_examples` entry must make its notebook's check() FAIL.
+
+    The example is dropped into the template's implementation cell, so this
+    exercises exactly what a learner's submission does: the judge reads the
+    function's source out of the executed cell and rejects the banned call.
+    """
+    sys.path.insert(0, str(ROOT))
+    from jax_judge.tasks import TASKS  # noqa: E402  (needs ROOT on the path)
+
+    cases = [(f"{tid} [{i + 1}]", tid, t, src) for tid, t in sorted(TASKS.items())
+             for i, src in enumerate(t.get("banned_examples", []))]
+    if not cases:
+        print(f"{YELLOW}No task declares banned_examples{RESET}")
+        return 0
+
+    print(f"\n{BOLD}Checking {len(cases)} banned implementation(s){RESET}\n")
+    failures = 0
+
+    for label, tid, task, src in cases:
+        path = ROOT / "templates" / f"{task['number']}_{tid}.ipynb"
+        if not path.exists():
+            failures += 1
+            print(f"  {RED}❌ {label} — no template at {path.name}{RESET}")
+            continue
+
+        nb = nbformat.read(path, as_version=4)
+        patched = 0
+        for cell in nb.cells:
+            if cell.cell_type == "code" and cell.source.startswith(IMPL_MARKER):
+                cell.source = f"{IMPL_MARKER}\n\n{src.strip()}"
+                patched += 1
+        if patched != 1:
+            failures += 1
+            print(f"  {RED}❌ {label} — patched {patched} implementation cells, expected 1{RESET}")
+            continue
+
+        with tempfile.NamedTemporaryFile(suffix=".ipynb", dir=path.parent) as tmp:
+            nbformat.write(nb, tmp.name)
+            ok, text = run_notebook(Path(tmp.name), allow_errors=True)
+
+        lines = src.strip().splitlines()
+        gist = next((ln.strip() for ln in lines if "return" in ln), lines[-1].strip())
+        if ok and not _all_passed(text):
+            print(f"  {GREEN}✅ {label}{RESET} {DIM}rejected: {gist[:64]}{RESET}")
+        else:
+            failures += 1
+            print(f"  {RED}❌ {label} — banned implementation was ACCEPTED{RESET}")
+            print(f"     {DIM}{gist[:64]}{RESET}")
+
+    print()
+    if failures:
+        print(f"{RED}{BOLD}{failures}/{len(cases)} banned implementation(s) slipped through{RESET}\n")
+        return 1
+    print(f"{GREEN}{BOLD}All {len(cases)} banned implementations were rejected{RESET}\n")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("numbers", nargs="*", help="notebook number prefixes, e.g. 01 07")
     ap.add_argument("--templates", action="store_true",
                     help="run blank templates instead (they must not crash)")
+    ap.add_argument("--banned", action="store_true",
+                    help="assert every task's banned_examples are REJECTED")
     args = ap.parse_args()
+
+    if args.banned:
+        return run_banned()
 
     d = ROOT / ("templates" if args.templates else "solutions")
     paths = sorted(p for p in d.glob("*.ipynb") if not p.name.startswith("00_"))
@@ -134,7 +212,7 @@ def main() -> int:
                 print(f"{DIM}{tail}{RESET}")
             continue
 
-        if "All" in text and "tests passed" in text:
+        if _all_passed(text):
             print(f"  {GREEN}✅ {p.name}{RESET}")
         else:
             failures += 1

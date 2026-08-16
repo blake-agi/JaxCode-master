@@ -181,7 +181,7 @@ reporting a diff.
 ## 📚 Problems
 
 <!-- PROBLEMS:START -->
-**55 problems** — 🟢 13 Easy · 🟡 21 Medium · 🔴 21 Hard
+**56 problems** — 🟢 13 Easy · 🟡 22 Medium · 🔴 21 Hard
 
 
 ### JAX Fundamentals (11)
@@ -238,7 +238,7 @@ reporting a diff.
 | 28 | [Mixture of Experts (MoE)](templates/28_moe.ipynb) | 🔴 Hard | `moe` |
 | b_13 | [Mini GPT — assemble the whole model](templates/b_13_mini_gpt.ipynb) | 🔴 Hard | `mini_gpt` |
 
-### Training (7)
+### Training (8)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -248,7 +248,8 @@ reporting a diff.
 | 30 | [Cosine LR Scheduler with Warmup](templates/30_cosine_lr.ipynb) | 🟡 Medium | `cosine_lr` |
 | 31 | [Gradient Accumulation](templates/31_gradient_accumulation.ipynb) | 🟢 Easy | `gradient_accumulation` |
 | 40 | [Linear Regression](templates/40_linear_regression.ipynb) | 🟡 Medium | `linear_regression` |
-| b_14 | [Cross-Entropy: Smoothing & Padding Mask](templates/b_14_cross_entropy_full.ipynb) | 🟡 Medium | `cross_entropy_full` |
+| b_14 | [Cross-Entropy Without logsumexp](templates/b_14_cross_entropy_fused.ipynb) | 🟡 Medium | `cross_entropy_fused` |
+| b_15 | [Cross-Entropy: Smoothing & Padding Mask](templates/b_15_cross_entropy_full.ipynb) | 🟡 Medium | `cross_entropy_full` |
 
 ### Inference & Decoding (5)
 

@@ -1,4 +1,7 @@
-"""Cross-entropy from logits — the log-sum-exp trick. Part 1 of notebook 16."""
+"""Cross-entropy from logits, with logsumexp allowed — as in the PyTorch original.
+
+Writing logsumexp yourself is b_14; smoothing and the padding mask are b_15.
+"""
 
 TASK = {
     "title": "Cross-Entropy Loss",
@@ -7,11 +10,13 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "cross_entropy_loss",
     "hint": (
-        "Never log(softmax(x)) — compute log-softmax in one step: subtract the "
-        "row max, then subtract the log of the sum of the shifted exponentials. "
-        "Pull out the target's log-probability by gathering that index with "
-        "jnp.take_along_axis rather than materialising a one-hot matrix, then "
-        "take the mean over the batch."
+        "Stay in log space the whole way: the loss for one row is "
+        "logsumexp(z) - z[t], no exp() anywhere. Get z[t] by gathering that one "
+        "index — logits[targets] indexes ROWS, which is not what you want; use "
+        "logits[jnp.arange(len(targets)), targets] or jnp.take_along_axis with "
+        "targets[:, None]. Then take the mean over the batch. "
+        "jax.scipy.special.logsumexp is allowed here — writing it yourself is "
+        "b_14."
     ),
     "description": r"""
 Implement **cross-entropy loss directly from logits** — the plain form, no extras.
@@ -24,49 +29,39 @@ Return the **mean over the batch**.
 ### Rules
 - Signature: `cross_entropy_loss(logits, targets)`
 - `logits` is `(B, C)`, `targets` is `(B,)` of integer class ids; the output is a **scalar**
-- Banned: `jax.nn.log_softmax`, `jax.nn.softmax`, `jax.scipy.special.logsumexp`, `optax`
-- Compute $\log p$ in one fused expression; never form $p$ and then take its log
-- It has to survive extreme logits, and work under `jit`
+- Banned: `optax`, and `jax.nn.log_softmax` / `jax.nn.softmax` — those *are* the
+  answer, not tools
+- **`jax.scipy.special.logsumexp` is allowed**, and is the intended route
+- Must stay finite at extreme logits, and work under `jit`
 
-### Why you never softmax-then-log
-The naive route dies twice.
+### Stay in log space
+Substitute the softmax into $-\log p_{i,t_i}$ and it collapses:
 
-**Overflow.** `exp(z)` is `inf` above $z \approx 88.7$ in float32 and above
-$z \approx 11.1$ in float16. The fix is the shift
-$\log \sum_k e^{z_k} = m + \log \sum_k e^{z_k - m}$ with $m = \max_k z_k$: every
-exponent is now $\le 0$, so the largest term is exactly `1.0` and the sum can
-never overflow.
+$$\ell_i = -\log \frac{e^{z_{i,t_i}}}{\sum_k e^{z_{i,k}}}
+= \log \sum_k e^{z_{i,k}} \;-\; z_{i,t_i}
+= \operatorname{logsumexp}(z_i) - z_{i,t_i}$$
 
-**Underflow — the one that actually bites.** Even with no overflow, a confidently
-*wrong* prediction pushes $p_t$ under the float32 floor: normals stop at
-$\approx 1.2\times10^{-38}$ and subnormals at $\approx 1.4\times10^{-45}$, and
-XLA flushes subnormals to zero on accelerators anyway. Once $p_t$ rounds to
-`0.0`, `log(0) = -inf` makes the loss `inf` and every gradient `nan`. The fused
-form never materialises $p_t$: it computes $z_t - \log\sum_k e^{z_k}$, a
-perfectly finite number like $-120$ (that is $p_t \approx 10^{-52}$, hopelessly
-unrepresentable, yet its logarithm is an ordinary float). Your loss stays
-large-but-finite and training recovers instead of poisoning every parameter
-with `nan`.
-
-There is a gradient bonus too. $\partial \ell / \partial z = p - q$ — a clean,
-bounded expression that autodiff derives exactly from the fused form. Compose
-`log` on top of a separate `softmax` and you hand XLA a division of two tiny
-numbers to differentiate through.
-
-The `max` shift cancels analytically ($\ell$ is invariant to it), so wrapping it
-in `stop_gradient` changes nothing mathematically and keeps the backward graph
-smaller.
+No `exp` survives. That is the whole trick, and it is what keeps the loss finite
+when a logit is 1000 or a prediction is confidently wrong — `logsumexp` does the
+max-shift for you. Compute the probability first and the intermediate `exp(z)`
+overflows to `inf`, or $p_t$ underflows to `0.0` and `log(0) = -inf` poisons
+every gradient. **b_14** is this same problem with `logsumexp` banned, where you
+write that shift yourself and the failure modes get the full treatment.
 
 ### Gathering the target
-$-\log p_{i,t_i}$ needs one entry per row. `jnp.take_along_axis(log_probs,
-targets[:, None], axis=-1)` reads exactly those and nothing else. A one-hot
-matmul gets the same answer by building a `(B, C)` array of zeros to multiply
-against — correct, but it is `B×C` work and memory for `B` numbers, which at
-vocabulary sizes is the difference between a loss that fits and one that does
-not.
+$z_{i,t_i}$ is one entry per row. Careful: `logits[targets]` indexes **rows**,
+not one column per row — it returns `(B, C)`, silently. What you want is
+`logits[jnp.arange(B), targets]`, or `jnp.take_along_axis(logits,
+targets[:, None], axis=-1)[:, 0]`.
 
-Once this passes, **`b_14` (Cross-Entropy: Smoothing & Padding Mask)** picks it
-up and adds the two arguments real training code always passes.
+A one-hot `einsum` gets the same answer, but it builds a `(B, C)` matrix of
+zeros to multiply against — `B×C` work and memory to read `B` numbers, which at
+vocabulary sizes is the difference between a loss that fits and one that does
+not. (`einsum` cannot index for you: `einsum('...c,...->...', logits, targets)`
+multiplies by the target *values* and sums over the classes.)
+
+Once this passes: **`b_14`** removes `logsumexp`, then **`b_15`** adds label
+smoothing and a padding mask.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
@@ -86,22 +81,19 @@ def cross_entropy_loss(logits, targets):
 ''',
     "solution": '''import jax
 import jax.numpy as jnp
+from jax.scipy.special import logsumexp
 
 
 def cross_entropy_loss(logits, targets):
     logits = jnp.asarray(logits)
     targets = jnp.asarray(targets)
 
-    # log-softmax, fused. Shifting by the row max makes every exponent <= 0, so
-    # the sum is in [1, C] and can never overflow. The shift cancels exactly in
-    # the final expression, hence stop_gradient.
-    shift = jax.lax.stop_gradient(jnp.max(logits, axis=-1, keepdims=True))
-    z = logits - shift
-    log_probs = z - jnp.log(jnp.sum(jnp.exp(z), axis=-1, keepdims=True))
+    # Gather the target logit — one entry per row, no one-hot matrix needed.
+    # (logits[targets] would index rows and give back a (B, C) array.)
+    z_t = jnp.take_along_axis(logits, targets[:, None], axis=-1)[:, 0]
 
-    # Gather the target's log-probability — no one-hot matrix needed.
-    nll = -jnp.take_along_axis(log_probs, targets[..., None], axis=-1)[..., 0]
-    return jnp.mean(nll)
+    # The whole loss in log space: logsumexp(z) - z_t. No exp() to overflow.
+    return jnp.mean(logsumexp(logits, axis=-1) - z_t)
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
@@ -115,6 +107,11 @@ targets = jnp.array([1, 2, 0, 4])
 ref = -jnp.mean(jnp.take_along_axis(
     jax.nn.log_softmax(logits, axis=-1), targets[:, None], axis=-1))
 print("mine:", float(cross_entropy_loss(logits, targets)), " ref:", float(ref))
+
+# The indexing trap: these are NOT the same thing.
+print("\\nlogits[targets].shape      :", logits[targets].shape, " <- rows, wrong")
+print("take_along_axis(...).shape :",
+      jnp.take_along_axis(logits, targets[:, None], axis=-1)[:, 0].shape, " <- right")
 
 # The stability trap: huge logits.
 big = jnp.array([[1000.0, 0.0, 0.0]])

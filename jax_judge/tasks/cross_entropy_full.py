@@ -1,17 +1,18 @@
 """Cross-entropy, the production version — label smoothing and a padding mask.
 
-Problem 16 is the textbook loss. This is what training code actually calls:
-the same fused log-softmax, plus the two arguments every real trainer passes.
+Problem 16 is the textbook loss and b_14 is the same thing with logsumexp
+banned. This is what training code actually calls: that loss, plus the two
+arguments every real trainer passes.
 """
 
 TASK = {
     "title": "Cross-Entropy: Smoothing & Padding Mask",
     "category": "Training",
-    "number": "b_14",
+    "number": "b_15",
     "difficulty": "Medium",
     "function_name": "cross_entropy_loss",
     "hint": (
-        "Start from problem 16's fused log-softmax — nothing about the "
+        "Start from b_14's fused log-softmax — nothing about the "
         "stability part changes. Label smoothing is a convex blend of the "
         "target's NLL and the mean log-probability over the vocabulary: "
         "(1-a) * nll + a * mean(-log p). For ignore_index the trap is that a "
@@ -23,8 +24,9 @@ TASK = {
         "batch gives 0.0 instead of nan."
     ),
     "description": r"""
-Problem 16 built the loss itself. This is the version training code actually
-calls: **label smoothing** and a **padding mask**, over inputs of any rank.
+Problem 16 and b_14 built the loss itself. This is the version training code
+actually calls: **label smoothing** and a **padding mask**, over inputs of any
+rank.
 
 $$\ell_i = -\sum_{c} q_{i,c} \log p_{i,c}, \qquad
 p_{i,c} = \frac{e^{z_{i,c}}}{\sum_{k} e^{z_{i,k}}}$$
@@ -45,8 +47,8 @@ Return the **mean over the non-ignored positions only**.
   from the denominator; if every position is ignored, return `0.0` (not `nan`)
 - No `if` on array values — the whole thing must work under `jit` and `vmap`
 
-> Do **problem 16** first. The stability half is unchanged here, and this
-> problem assumes you already have it.
+> Do **b_14** first. The stability half is unchanged here — same banned list,
+> same hand-written shift — and this problem assumes you already have it.
 
 ### The interview angle
 `ignore_index` is where candidates lose the plot. Pad-to-longest batching over
@@ -110,7 +112,7 @@ def cross_entropy_loss(logits, targets, *, label_smoothing=0.0, ignore_index=-1)
     logits = jnp.asarray(logits)
     targets = jnp.asarray(targets)
 
-    # log-softmax, fused — exactly as in problem 16. Shifting by the row max
+    # log-softmax, fused — exactly as in b_14. Shifting by the row max
     # makes every exponent <= 0, so the sum is in [1, C] and cannot overflow.
     # The shift cancels analytically, hence stop_gradient.
     shift = jax.lax.stop_gradient(jnp.max(logits, axis=-1, keepdims=True))
@@ -134,7 +136,7 @@ def cross_entropy_loss(logits, targets, *, label_smoothing=0.0, ignore_index=-1)
     "demo": '''import jax
 import jax.numpy as jnp
 
-# With no smoothing and no padding this is just problem 16 again.
+# With no smoothing and no padding this is just b_14 again.
 print("uniform:", cross_entropy_loss(jnp.zeros((1, 3)), jnp.array([0])), "vs", jnp.log(3.0))
 
 # Padding. Non-uniform logits, so the denominator genuinely matters.
