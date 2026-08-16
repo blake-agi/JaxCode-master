@@ -71,11 +71,6 @@ ALLOWED: dict[str, dict[str, str]] = {
                "actively misleading in JAX",
     },
     # --- optional additions that leave the original's call working
-    "cross_entropy": {
-        "label_smoothing": "optional; the original's 2-arg call is unchanged",
-        "ignore_index": "optional padding mask, the standard companion to "
-                        "cross-entropy and cross-checked against torch",
-    },
     "gelu": {
         "approximate": "optional; exists because jax.nn.gelu defaults to the "
                        "TANH form while torch defaults to erf — a real JAX trap",

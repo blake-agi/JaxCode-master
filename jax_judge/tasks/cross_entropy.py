@@ -1,4 +1,4 @@
-"""Cross-entropy from logits — the log-sum-exp trick, label smoothing, padding mask."""
+"""Cross-entropy from logits — the log-sum-exp trick. Part 1 of notebook 16."""
 
 TASK = {
     "title": "Cross-Entropy Loss",
@@ -7,39 +7,26 @@ TASK = {
     "difficulty": "Easy",
     "function_name": "cross_entropy_loss",
     "hint": (
-        "Never log(softmax(x)) — compute log-softmax in one step, subtracting the "
-        "row max and then the log-sum-exp of the shifted logits. Pull out the "
-        "target's log-probability by gathering that index rather than "
-        "materialising a one-hot matrix. Label smoothing is a convex blend of the "
-        "target's NLL and the mean log-probability over the vocabulary. For "
-        "ignore_index the trap is that a bad index does NOT raise in JAX: "
-        "jnp.take_along_axis defaults to mode='fill', so a sentinel like -100 "
-        "gathers NaN, while -1 quietly wraps round to the LAST class. Sanitise "
-        "the indices before gathering, then mask the per-token losses and divide "
-        "by the number of valid tokens, not the total."
+        "Never log(softmax(x)) — compute log-softmax in one step: subtract the "
+        "row max, then subtract the log of the sum of the shifted exponentials. "
+        "Pull out the target's log-probability by gathering that index with "
+        "jnp.take_along_axis rather than materialising a one-hot matrix, then "
+        "take the mean over the batch."
     ),
     "description": r"""
-Implement **cross-entropy loss directly from logits**, with optional label
-smoothing and a padding mask.
+Implement **cross-entropy loss directly from logits** — the plain form, no extras.
 
-$$\ell_i = -\sum_{c} q_{i,c} \log p_{i,c}, \qquad
+$$\ell_i = -\log p_{i,t_i}, \qquad
 p_{i,c} = \frac{e^{z_{i,c}}}{\sum_{k} e^{z_{i,k}}}$$
 
-With smoothing $\alpha$ over $C$ classes the target distribution is
-$q_{i,c} = (1-\alpha)\,\mathbb{1}[c = t_i] + \alpha/C$, so
-
-$$\ell_i = (1-\alpha)\bigl(-\log p_{i,t_i}\bigr) \;+\; \frac{\alpha}{C}\sum_c \bigl(-\log p_{i,c}\bigr)$$
-
-Return the **mean over the non-ignored positions only**.
+Return the **mean over the batch**.
 
 ### Rules
-- Signature: `cross_entropy_loss(logits, targets, *, label_smoothing=0.0, ignore_index=-1)`
-- `logits` is `(..., C)`, `targets` is `(...)` of integer class ids; the output is a **scalar**
+- Signature: `cross_entropy_loss(logits, targets)`
+- `logits` is `(B, C)`, `targets` is `(B,)` of integer class ids; the output is a **scalar**
 - Banned: `jax.nn.log_softmax`, `jax.nn.softmax`, `jax.scipy.special.logsumexp`, `optax`
 - Compute $\log p$ in one fused expression; never form $p$ and then take its log
-- Positions where `targets == ignore_index` contribute **zero** loss and are excluded
-  from the denominator; if every position is ignored, return `0.0` (not `nan`)
-- No `if` on array values — the whole thing must work under `jit` and `vmap`
+- It has to survive extreme logits, and work under `jit`
 
 ### Why you never softmax-then-log
 The naive route dies twice.
@@ -70,35 +57,27 @@ The `max` shift cancels analytically ($\ell$ is invariant to it), so wrapping it
 in `stop_gradient` changes nothing mathematically and keeps the backward graph
 smaller.
 
-### The interview angle
-`ignore_index` is where candidates lose the plot. Pad-to-longest batching over
-variable-length sequences routinely leaves a third or more of the positions as
-`<pad>`. Average over all of them and two things go wrong: the loss is scaled
-down by the pad fraction (so it silently changes meaning when the batch
-composition changes), and the gradient actively teaches the model to predict
-`<pad>`.
+### Gathering the target
+$-\log p_{i,t_i}$ needs one entry per row. `jnp.take_along_axis(log_probs,
+targets[:, None], axis=-1)` reads exactly those and nothing else. A one-hot
+matmul gets the same answer by building a `(B, C)` array of zeros to multiply
+against — correct, but it is `B×C` work and memory for `B` numbers, which at
+vocabulary sizes is the difference between a loss that fits and one that does
+not.
 
-The second half is the index itself, and it is worth knowing exactly what JAX
-does here because it does **not** raise. `jnp.take_along_axis` defaults to
-`mode="fill"`, so a genuinely out-of-range sentinel like `-100` gathers `NaN` —
-which then propagates through the mean and poisons the whole batch even though
-you "masked" it afterwards. And `-1` does not go out of range at all: it wraps
-round to the last class, so you get a plausible-looking wrong loss with nothing
-to alert you. Both are fixed the same way — substitute a valid index *before*
-the gather — but only if you knew there was something to fix.
+Once this passes, **`b_14` (Cross-Entropy: Smoothing & Padding Mask)** picks it
+up and adds the two arguments real training code always passes.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
 
 
-def cross_entropy_loss(logits, targets, *, label_smoothing=0.0, ignore_index=-1):
-    """Mean cross-entropy over the non-ignored positions.
+def cross_entropy_loss(logits, targets):
+    """Mean cross-entropy over the batch.
 
     Args:
-        logits:          (..., C) unnormalised scores
-        targets:         (...) integer class ids
-        label_smoothing: alpha in [0, 1); target is (1-a)*onehot + a/C
-        ignore_index:    positions equal to this are masked out entirely
+        logits:  (B, C) unnormalised scores
+        targets: (B,) integer class ids
 
     Returns:
         Scalar loss.
@@ -109,10 +88,9 @@ def cross_entropy_loss(logits, targets, *, label_smoothing=0.0, ignore_index=-1)
 import jax.numpy as jnp
 
 
-def cross_entropy_loss(logits, targets, *, label_smoothing=0.0, ignore_index=-1):
+def cross_entropy_loss(logits, targets):
     logits = jnp.asarray(logits)
     targets = jnp.asarray(targets)
-    num_classes = logits.shape[-1]
 
     # log-softmax, fused. Shifting by the row max makes every exponent <= 0, so
     # the sum is in [1, C] and can never overflow. The shift cancels exactly in
@@ -121,18 +99,9 @@ def cross_entropy_loss(logits, targets, *, label_smoothing=0.0, ignore_index=-1)
     z = logits - shift
     log_probs = z - jnp.log(jnp.sum(jnp.exp(z), axis=-1, keepdims=True))
 
-    valid = targets != ignore_index
-    # Clamp BEFORE gathering: JAX silently clips out-of-range indices.
-    safe = jnp.where(valid, targets, 0)
-    nll = -jnp.take_along_axis(log_probs, safe[..., None], axis=-1)[..., 0]
-
-    # Smoothing is a convex blend with the uniform target: (a/C) * sum_c -log p_c.
-    uniform = -jnp.mean(log_probs, axis=-1)
-    per_position = (1.0 - label_smoothing) * nll + label_smoothing * uniform
-
-    per_position = jnp.where(valid, per_position, 0.0)
-    n_valid = jnp.sum(valid)
-    return jnp.sum(per_position) / jnp.maximum(n_valid, 1)
+    # Gather the target's log-probability — no one-hot matrix needed.
+    nll = -jnp.take_along_axis(log_probs, targets[..., None], axis=-1)[..., 0]
+    return jnp.mean(nll)
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
@@ -140,29 +109,25 @@ import jax.numpy as jnp
 # Uniform logits over 3 classes -> loss is exactly log(3).
 print("uniform:", cross_entropy_loss(jnp.zeros((1, 3)), jnp.array([0])), "vs", jnp.log(3.0))
 
+# Random data against the library log-softmax.
+logits = jax.random.normal(jax.random.key(0), (4, 5)) * 3.0
+targets = jnp.array([1, 2, 0, 4])
+ref = -jnp.mean(jnp.take_along_axis(
+    jax.nn.log_softmax(logits, axis=-1), targets[:, None], axis=-1))
+print("mine:", float(cross_entropy_loss(logits, targets)), " ref:", float(ref))
+
 # The stability trap: huge logits.
 big = jnp.array([[1000.0, 0.0, 0.0]])
-print("big logits, correct class:", cross_entropy_loss(big, jnp.array([0])))
+print("\\nbig logits, correct class:", cross_entropy_loss(big, jnp.array([0])))
 print("naive softmax-then-log would give:",
       -jnp.log(jnp.exp(big) / jnp.exp(big).sum(-1, keepdims=True))[0, 0])
 
-# Padding. Non-uniform logits, so the denominator genuinely matters.
-logits = jax.random.normal(jax.random.key(0), (4, 5)) * 3.0
-print("\\nmean over the 2 real tokens:",
-      float(cross_entropy_loss(logits, jnp.array([1, 2, -1, -1]), ignore_index=-1)))
-print("mean over all 4 positions  :",
-      float(cross_entropy_loss(logits, jnp.array([1, 2, 0, 0]))), " <- wrong denominator")
+# Confidently WRONG stays finite — the loss is ~1000, not inf.
+print("big logits, wrong class:  ", float(cross_entropy_loss(big, jnp.array([1]))))
 
-# Why the index must be sanitised BEFORE the gather: JAX never raises here.
-print("\\ngather at -1  ->", jnp.take_along_axis(logits, jnp.full((4, 1), -1), -1)[:, 0])
-print("               ...that is column 4, read silently")
-print("gather at -100->", jnp.take_along_axis(logits, jnp.full((4, 1), -100), -1)[:, 0])
-print("               ...NaN, which masking afterwards will not remove")
-
-# Smoothing penalises over-confidence.
-sharp, t0 = jnp.array([[20.0, 0.0, 0.0]]), jnp.array([0])
-print("\\nsharp, alpha=0.0:", float(cross_entropy_loss(sharp, t0)))
-print("sharp, alpha=0.1:", float(cross_entropy_loss(sharp, t0, label_smoothing=0.1)))
+# The gradient is p - onehot, averaged over the batch.
+g = jax.grad(cross_entropy_loss)(jnp.array([[2.0, 1.0, 0.0]]), jnp.array([0]))
+print("\\ngrad:", g, " sums to", float(jnp.sum(g)))
 ''',
     "tests": [
         {
@@ -186,6 +151,13 @@ logits = jnp.array([[0.0, jnp.log(3.0)], [jnp.log(3.0), 0.0]])
 expected = 0.5 * (-jnp.log(0.75) - jnp.log(0.25))
 out = {fn}(logits, jnp.array([1, 1]))
 assert jnp.allclose(out, expected, atol=1e-6), f'{float(out):.6f} vs {float(expected):.6f}'
+
+# The mean is over the batch: duplicating a row must not change the loss.
+one = {fn}(logits[:1], jnp.array([1]))
+dup = {fn}(jnp.concatenate([logits[:1]] * 4), jnp.array([1, 1, 1, 1]))
+assert jnp.allclose(one, dup, atol=1e-6), (
+    f'Reduce with the MEAN over the batch, not the sum: {float(dup):.6f} vs {float(one):.6f}'
+)
 """,
         },
         {
@@ -200,16 +172,24 @@ targets = jax.random.randint(jax.random.key(1), (16,), 0, 12)
 ref = -jnp.mean(jnp.take_along_axis(
     jax.nn.log_softmax(logits, axis=-1), targets[:, None], axis=-1))
 out = {fn}(logits, targets)
+assert jnp.ndim(out) == 0, f'Loss must be a scalar, got shape {out.shape}'
 assert jnp.allclose(out, ref, atol=1e-5), f'{float(out):.6f} vs reference {float(ref):.6f}'
 
-# Sequence shape (B, T, C) must work too, averaging over B*T.
-lg = jax.random.normal(jax.random.key(2), (3, 5, 7))
-tg = jax.random.randint(jax.random.key(3), (3, 5), 0, 7)
-ref3 = -jnp.mean(jnp.take_along_axis(
-    jax.nn.log_softmax(lg, axis=-1), tg[..., None], axis=-1))
-o3 = {fn}(lg, tg)
-assert jnp.ndim(o3) == 0, f'(B, T, C) input must still give a scalar, got {o3.shape}'
-assert jnp.allclose(o3, ref3, atol=1e-5), f'(B, T, C): {float(o3):.6f} vs {float(ref3):.6f}'
+# A second batch, wider and shallower, so a hardcoded axis or shape shows up.
+lg = jax.random.normal(jax.random.key(2), (3, 40)) * 2.0
+tg = jax.random.randint(jax.random.key(3), (3,), 0, 40)
+ref2 = -jnp.mean(jnp.take_along_axis(
+    jax.nn.log_softmax(lg, axis=-1), tg[:, None], axis=-1))
+out2 = {fn}(lg, tg)
+assert jnp.allclose(out2, ref2, atol=1e-5), f'{float(out2):.6f} vs {float(ref2):.6f}'
+
+# Softmax is invariant to adding a constant to a whole row, so the loss must
+# be too. Reducing down the batch axis instead of the class axis breaks this.
+bump = logits + jnp.arange(16.0)[:, None]
+assert jnp.allclose({fn}(bump, targets), out, atol=1e-4), (
+    'Adding a per-row constant must not change the loss — you are reducing '
+    'over the wrong axis'
+)
 """,
         },
         {
@@ -241,89 +221,15 @@ assert jnp.allclose(out2, jnp.log(4.0), atol=1e-4), (
 """,
         },
         {
-            "name": "Label smoothing",
-            "code": """
-import jax
-import jax.numpy as jnp
-
-logits = jax.random.normal(jax.random.key(4), (8, 6)) * 2.0
-targets = jax.random.randint(jax.random.key(5), (8,), 0, 6)
-lp = jax.nn.log_softmax(logits, axis=-1)
-
-# alpha = 0 must be identical to plain cross-entropy.
-assert jnp.allclose({fn}(logits, targets, label_smoothing=0.0),
-                    {fn}(logits, targets), atol=1e-7), 'label_smoothing=0.0 changed the loss'
-
-# alpha = 0.1 against the explicit convex blend.
-a = 0.1
-nll = -jnp.take_along_axis(lp, targets[:, None], axis=-1)[:, 0]
-ref = jnp.mean((1 - a) * nll + a * (-jnp.mean(lp, axis=-1)))
-got = {fn}(logits, targets, label_smoothing=a)
-assert jnp.allclose(got, ref, atol=1e-5), (
-    f'{float(got):.6f} vs {float(ref):.6f} — the uniform part must spread alpha over '
-    'ALL C classes (including the true one), i.e. q = (1-a)*onehot + a/C'
-)
-
-# alpha = 1.0 is the pure uniform target: mean over classes of -log p.
-full = {fn}(logits, targets, label_smoothing=1.0)
-assert jnp.allclose(full, jnp.mean(-jnp.mean(lp, axis=-1)), atol=1e-5), (
-    f'label_smoothing=1.0 should ignore the target entirely, got {float(full)}'
-)
-
-# Smoothing penalises over-confidence: a near-perfect prediction gets a HIGHER loss.
-sharp = jnp.array([[20.0, 0.0, 0.0]])
-t = jnp.array([0])
-assert float({fn}(sharp, t, label_smoothing=0.1)) > float({fn}(sharp, t)) + 1e-3, (
-    'Smoothing must increase the loss of an over-confident correct prediction'
-)
-""",
-        },
-        {
-            "name": "ignore_index masks positions and the denominator",
-            "code": """
-import jax
-import jax.numpy as jnp
-
-logits = jax.random.normal(jax.random.key(6), (6, 5)) * 3.0
-targets = jnp.array([1, 4, -1, 0, -1, 2])
-
-masked = {fn}(logits, targets, ignore_index=-1)
-keep = jnp.array([0, 1, 3, 5])
-dense = {fn}(logits[keep], targets[keep])
-assert jnp.allclose(masked, dense, atol=1e-6), (
-    f'{float(masked):.6f} vs {float(dense):.6f} — the mean must divide by the number of '
-    'VALID positions (4 here), not by 6'
-)
-
-# The masked positions must not leak in through the gather either.
-poison = logits.at[2].set(jnp.array([1e4, -1e4, 0.0, 0.0, 0.0]))
-poison = poison.at[4].set(jnp.array([-1e4, 1e4, 0.0, 0.0, 0.0]))
-assert jnp.allclose({fn}(poison, targets, ignore_index=-1), masked, atol=1e-5), (
-    'Changing the logits at an ignored position changed the loss'
-)
-
-# A different sentinel value.
-t2 = jnp.array([1, 4, -100, 0, -100, 2])
-assert jnp.allclose({fn}(logits, t2, ignore_index=-100), dense, atol=1e-6), (
-    'ignore_index must be honoured for values other than -1'
-)
-
-# Everything ignored -> 0.0, not nan (0/0).
-allpad = {fn}(logits, jnp.full((6,), -1), ignore_index=-1)
-assert jnp.isfinite(allpad), f'All-ignored batch gave {allpad} — guard the zero denominator'
-assert jnp.allclose(allpad, 0.0, atol=1e-7), f'All-ignored should be 0.0, got {float(allpad)}'
-""",
-        },
-        {
-            "name": "Gradients are p - q and vanish on ignored rows",
+            "name": "Gradients are p - onehot, and stay finite",
             "code": """
 import jax
 import jax.numpy as jnp
 
 logits = jax.random.normal(jax.random.key(7), (4, 5)) * 2.0
-targets = jnp.array([2, 0, -1, 4])
+targets = jnp.array([2, 0, 1, 4])
 
-g = jax.grad(lambda z: {fn}(z, targets, ignore_index=-1))(logits)
+g = jax.grad({fn})(logits, targets)
 assert g.shape == logits.shape, f'Gradient shape {g.shape} vs {logits.shape}'
 assert jnp.isfinite(g).all(), 'Non-finite gradient'
 
@@ -331,42 +237,31 @@ assert jnp.isfinite(g).all(), 'Non-finite gradient'
 assert jnp.allclose(jnp.sum(g, axis=-1), 0.0, atol=1e-6), (
     f'Per-row gradients should sum to 0 across classes, got {jnp.sum(g, axis=-1)}'
 )
-# Ignored rows get exactly zero gradient.
-assert jnp.allclose(g[2], 0.0, atol=1e-9), f'Ignored row has gradient {g[2]}'
 
-# Explicit check: grad = (p - onehot) / n_valid on the valid rows.
+# Explicit: grad = (p - onehot) / B.
 p = jax.nn.softmax(logits, axis=-1)
-onehot = jax.nn.one_hot(jnp.clip(targets, 0), 5)
-expected = jnp.where((targets != -1)[:, None], (p - onehot) / 3.0, 0.0)
-assert jnp.allclose(g, expected, atol=1e-5), 'Gradient does not match (p - q) / n_valid'
+expected = (p - jax.nn.one_hot(targets, 5)) / 4.0
+assert jnp.allclose(g, expected, atol=1e-5), 'Gradient does not match (p - onehot) / B'
 
-# Gradient stays finite where the naive softmax-then-log route would produce nan.
-gbig = jax.grad(lambda z: {fn}(z, jnp.array([1])))(jnp.array([[800.0, -800.0]]))
+# Gradient stays finite where the naive softmax-then-log route would give nan.
+gbig = jax.grad({fn})(jnp.array([[800.0, -800.0]]), jnp.array([1]))
 assert jnp.isfinite(gbig).all(), f'nan/inf gradient at extreme logits: {gbig}'
 """,
         },
         {
-            "name": "jit and vmap",
+            "name": "jit",
             "code": """
-import functools
 import jax
 import jax.numpy as jnp
 
-logits = jax.random.normal(jax.random.key(8), (4, 9, 7))
-targets = jax.random.randint(jax.random.key(9), (4, 9), 0, 7)
+logits = jax.random.normal(jax.random.key(8), (6, 9)) * 3.0
+targets = jax.random.randint(jax.random.key(9), (6,), 0, 9)
 
-f = jax.jit(functools.partial({fn}, label_smoothing=0.05, ignore_index=-1))
-eager = {fn}(logits, targets, label_smoothing=0.05, ignore_index=-1)
-assert jnp.allclose(f(logits, targets), eager, atol=1e-6), 'jit changed the answer'
-
-# Per-example losses via vmap over the batch axis.
-per = jax.vmap(f)(logits, targets)
-assert per.shape == (4,), f'vmap gave {per.shape}, expected (4,)'
-assert jnp.allclose(jnp.mean(per), eager, atol=1e-5), (
-    'Mean of the per-example losses should equal the batched loss'
+eager = {fn}(logits, targets)
+jitted = jax.jit({fn})(logits, targets)
+assert jnp.allclose(jitted, eager, atol=1e-6), (
+    'jit changed the answer — no Python branching on array values'
 )
-for i in range(4):
-    assert jnp.allclose(per[i], f(logits[i], targets[i]), atol=1e-6), f'vmap row {i} differs'
 """,
         },
     ],

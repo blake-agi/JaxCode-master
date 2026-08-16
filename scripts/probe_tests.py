@@ -250,7 +250,24 @@ holes.append(("mini_gpt", probe("mini_gpt", "untied head (separate Linear)",
 print(f"\n{BOLD}=== cross_entropy ==={RESET}")
 holes.append(("cross_entropy", probe("cross_entropy", "log(softmax()) instead of log_softmax", '''
 import jax, jax.numpy as jnp
-def cross_entropy_loss(logits, labels, label_smoothing=0.0, ignore_index=-100):
+def cross_entropy_loss(logits, labels):
+    p = jnp.exp(logits) / jnp.sum(jnp.exp(logits), axis=-1, keepdims=True)
+    lp = jnp.log(p)
+    oh = jax.nn.one_hot(labels, logits.shape[-1])
+    return jnp.mean(-jnp.sum(oh * lp, axis=-1))
+''')))
+holes.append(("cross_entropy", probe("cross_entropy", "sum instead of mean over the batch", '''
+import jax, jax.numpy as jnp
+def cross_entropy_loss(logits, labels):
+    lp = logits - jax.scipy.special.logsumexp(logits, axis=-1, keepdims=True)
+    return -jnp.sum(jnp.take_along_axis(lp, labels[:, None], axis=-1))
+''')))
+
+print(f"\n{BOLD}=== cross_entropy_full ==={RESET}")
+holes.append(("cross_entropy_full", probe(
+    "cross_entropy_full", "log(softmax()) instead of log_softmax", '''
+import jax, jax.numpy as jnp
+def cross_entropy_loss(logits, labels, *, label_smoothing=0.0, ignore_index=-1):
     p = jnp.exp(logits) / jnp.sum(jnp.exp(logits), axis=-1, keepdims=True)
     lp = jnp.log(p)
     n = logits.shape[-1]
@@ -260,6 +277,51 @@ def cross_entropy_loss(logits, labels, label_smoothing=0.0, ignore_index=-100):
     loss = -jnp.sum(oh*lp, axis=-1)
     m = (labels != ignore_index)
     return jnp.sum(loss*m)/jnp.maximum(jnp.sum(m), 1)
+''')))
+holes.append(("cross_entropy_full", probe(
+    "cross_entropy_full", "ignored positions masked but still in the denominator", '''
+import jax, jax.numpy as jnp
+def cross_entropy_loss(logits, labels, *, label_smoothing=0.0, ignore_index=-1):
+    lp = logits - jax.scipy.special.logsumexp(logits, axis=-1, keepdims=True)
+    valid = labels != ignore_index
+    nll = -jnp.take_along_axis(lp, jnp.where(valid, labels, 0)[..., None], axis=-1)[..., 0]
+    per = (1 - label_smoothing) * nll + label_smoothing * (-jnp.mean(lp, axis=-1))
+    return jnp.mean(jnp.where(valid, per, 0.0))
+''')))
+holes.append(("cross_entropy_full", probe(
+    "cross_entropy_full", "smoothing spread over the OTHER C-1 classes", '''
+import jax, jax.numpy as jnp
+def cross_entropy_loss(logits, labels, *, label_smoothing=0.0, ignore_index=-1):
+    lp = logits - jax.scipy.special.logsumexp(logits, axis=-1, keepdims=True)
+    n = logits.shape[-1]
+    valid = labels != ignore_index
+    safe = jnp.where(valid, labels, 0)
+    oh = jax.nn.one_hot(safe, n)
+    q = oh * (1 - label_smoothing) + (1 - oh) * label_smoothing / (n - 1)
+    per = -jnp.sum(q * lp, axis=-1)
+    per = jnp.where(valid, per, 0.0)
+    return jnp.sum(per) / jnp.maximum(jnp.sum(valid), 1)
+''')))
+holes.append(("cross_entropy_full", probe(
+    "cross_entropy_full", "gathers the raw ignore_index, masks with * (0 * NaN = NaN)", '''
+import jax, jax.numpy as jnp
+def cross_entropy_loss(logits, labels, *, label_smoothing=0.0, ignore_index=-1):
+    lp = logits - jax.scipy.special.logsumexp(logits, axis=-1, keepdims=True)
+    nll = -jnp.take_along_axis(lp, labels[..., None], axis=-1)[..., 0]
+    per = (1 - label_smoothing) * nll + label_smoothing * (-jnp.mean(lp, axis=-1))
+    valid = (labels != ignore_index).astype(logits.dtype)
+    return jnp.sum(per * valid) / jnp.maximum(jnp.sum(valid), 1)
+''')))
+holes.append(("cross_entropy_full", probe(
+    "cross_entropy_full", "unguarded denominator: all-padding batch -> nan", '''
+import jax, jax.numpy as jnp
+def cross_entropy_loss(logits, labels, *, label_smoothing=0.0, ignore_index=-1):
+    lp = logits - jax.scipy.special.logsumexp(logits, axis=-1, keepdims=True)
+    valid = labels != ignore_index
+    safe = jnp.where(valid, labels, 0)
+    nll = -jnp.take_along_axis(lp, safe[..., None], axis=-1)[..., 0]
+    per = (1 - label_smoothing) * nll + label_smoothing * (-jnp.mean(lp, axis=-1))
+    return jnp.sum(jnp.where(valid, per, 0.0)) / jnp.sum(valid)
 ''')))
 
 print(f"\n{BOLD}{'='*60}{RESET}")
