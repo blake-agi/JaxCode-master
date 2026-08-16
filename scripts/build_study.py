@@ -51,6 +51,7 @@ from jax_judge.tasks import TASKS  # noqa: E402
 
 ORIGINAL = Path(os.environ.get("TORCHCODE_ORIGINAL", ROOT.parent / "TorchCode-master-original"))
 STUDY_DIR = Path(os.environ.get("JAXCODE_STUDY_DIR", ROOT.parent / "study"))
+_STUDY_FROM_ENV = bool(os.environ.get("JAXCODE_STUDY_DIR"))
 # Optional override so your working notebooks can live outside this checkout
 # (e.g. in a private practice repo). Unset — as in any fresh clone — this is
 # exactly ROOT/notebooks, so nothing changes for anyone else.
@@ -738,6 +739,36 @@ def show_rounds(task: str | None) -> int:
     return 0
 
 
+def _study_data_exists() -> bool:
+    """Refuse to run against a directory that holds no study log.
+
+    The failure this catches is silent and convincing. With JAXCODE_STUDY_DIR
+    unloaded — a plain terminal that never sourced the env file — STUDY_DIR
+    falls back inside the checkout, every CSV reads as absent, and the script
+    writes a perfectly formatted board reporting that you have solved nothing.
+    The real log is untouched, which is exactly why it goes unnoticed; the only
+    trace is a stray study/ directory somewhere you did not mean to write.
+
+    --init-problems is exempt: creating the directory is its whole job.
+    """
+    if any(p.exists() for p in (PROBLEMS_CSV, ATTEMPTS_CSV, MISTAKES_CSV,
+                                TRIES_CSV, AID_CSV)):
+        return True
+
+    print(f"{RED}No study log in {STUDY_DIR}{RESET}", file=sys.stderr)
+    if not _STUDY_FROM_ENV:
+        print(f"  {YELLOW}JAXCODE_STUDY_DIR is unset, so this fell back to the "
+              f"in-repo default.{RESET}\n"
+              f"  If your log lives elsewhere, the env file was not loaded. "
+              f"Point at it and re-run:\n"
+              f"    {DIM}export JAXCODE_STUDY_DIR=/path/to/study{RESET}",
+              file=sys.stderr)
+    print(f"  {DIM}Starting from scratch? "
+          f"python scripts/build_study.py --init-problems{RESET}",
+          file=sys.stderr)
+    return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--init-problems", action="store_true",
@@ -749,6 +780,8 @@ def main() -> int:
     args = ap.parse_args()
     if args.init_problems:
         return init_problems()
+    if not _study_data_exists():
+        return 2
     if args.backfill_from_progress:
         return backfill_from_progress()
     if args.rounds is not None:
