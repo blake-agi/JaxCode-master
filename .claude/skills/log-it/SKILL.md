@@ -34,7 +34,7 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
 
 1. **Auto-detect the task(s).** Run:
    ```bash
-   cd JaxCode-master && python scripts/list_edited_notebooks.py
+   cd jaxcode && python scripts/list_edited_notebooks.py
    ```
    This prints task ids for every notebook whose content differs from its
    `notebooks/_pristine/` baseline — i.e. every problem with real code in
@@ -145,7 +145,7 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
 
 7. **Regenerate the dashboard.** Run:
    ```bash
-   cd JaxCode-master && python scripts/build_study.py
+   cd jaxcode && python scripts/build_study.py
    ```
    (adjust the `cd` if already in that directory). This reads all four
    CSVs and rewrites `study/MISTAKES.md` — never edit that file directly.

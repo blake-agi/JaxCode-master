@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Guard the JAX port against drifting away from its PyTorch original.
 
-The 41 ported problems must stay recognisably the SAME problems as in
-TorchCode-master-original: same `function_name`, same `difficulty`, same
-notebook number. Deviations are allowed only when JAX genuinely forces one,
-and only when recorded in JAX_FORCED below with a reason.
+The 41 ported problems must stay recognisably the SAME problems as in the
+TorchCode original (located by _paths.original_repo): same `function_name`,
+same `difficulty`, same notebook number. Deviations are allowed only when JAX
+genuinely forces one, and only when recorded in JAX_FORCED below with a reason.
 
 This gate exists because the port silently drifted on 21 function names and
 22 difficulty labels before anyone noticed.
@@ -17,16 +17,15 @@ from __future__ import annotations
 
 import argparse
 import ast
-import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-ORIGINAL = Path(
-    os.environ.get("TORCHCODE_ORIGINAL", ROOT.parent / "TorchCode-master-original")
-)
+from _paths import original_repo  # noqa: E402
+
+ORIGINAL = original_repo()
 
 GREEN, RED, YELLOW, DIM, BOLD, RESET = (
     "\033[92m", "\033[91m", "\033[93m", "\033[90m", "\033[1m", "\033[0m",

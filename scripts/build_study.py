@@ -45,11 +45,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from _paths import original_repo  # noqa: E402
 from jax_judge._term import BOLD, DIM, GREEN, RED, RESET, YELLOW  # noqa: E402
 from jax_judge.progress import PROGRESS_PATH  # noqa: E402
 from jax_judge.tasks import TASKS  # noqa: E402
 
-ORIGINAL = Path(os.environ.get("TORCHCODE_ORIGINAL", ROOT.parent / "TorchCode-master-original"))
+ORIGINAL = original_repo()
 STUDY_DIR = Path(os.environ.get("JAXCODE_STUDY_DIR", ROOT.parent / "study"))
 _STUDY_FROM_ENV = bool(os.environ.get("JAXCODE_STUDY_DIR"))
 # Optional override so your working notebooks can live outside this checkout

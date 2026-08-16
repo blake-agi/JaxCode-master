@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import ast
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -31,10 +30,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from _paths import original_repo  # noqa: E402
 from jax_judge._term import BOLD, DIM, GREEN, RED, RESET, YELLOW  # noqa: E402
 from jax_judge.tasks import TASKS  # noqa: E402
 
-ORIGINAL = Path(os.environ.get("TORCHCODE_ORIGINAL", ROOT.parent / "TorchCode-master-original"))
+ORIGINAL = original_repo()
 
 # Parameters JAX requires that PyTorch does not: explicit PRNG and nnx plumbing.
 JAX_ONLY_PARAMS = {"rngs", "key"}
