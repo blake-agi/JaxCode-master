@@ -527,6 +527,75 @@ class LinearRegressionScan:
         return w, b
 ''' + _LRS_REST)))
 
+_SGD_HEAD = '''
+import jax, jax.numpy as jnp
+def sgd_epochs(X, y, key, lr=0.1, batch_size=10, epochs=20):
+    N, D = X.shape
+    nb = N // batch_size
+    used = nb * batch_size
+'''
+
+# The one that matters: reusing the key converges just fine, so only a direct
+# check on the returned key rejects it.
+holes.append(("minibatch_sgd_scan", probe(
+    "minibatch_sgd_scan", "never splits the key — same shuffle every epoch", _SGD_HEAD + '''
+    def epoch(carry, _):
+        (w, b), k = carry
+        perm = jax.random.permutation(k, N)[:used]     # uses k, never advances it
+        Xs = X[perm].reshape(nb, batch_size, D)
+        ys = y[perm].reshape(nb, batch_size)
+        def batch(p, d):
+            w, b = p; Xb, yb = d
+            e = Xb @ w + b - yb
+            return (w - lr*(2.0/batch_size)*(Xb.T@e),
+                    b - lr*(2.0/batch_size)*jnp.sum(e)), jnp.mean(e**2)
+        (w, b), bl = jax.lax.scan(batch, (w, b), (Xs, ys))
+        return ((w, b), k), jnp.mean(bl)
+    init = ((jnp.zeros(D), jnp.array(0.0)), key)
+    ((w, b), k), losses = jax.lax.scan(epoch, init, None, length=epochs)
+    return w, b, losses, k
+''')))
+
+holes.append(("minibatch_sgd_scan", probe(
+    "minibatch_sgd_scan", "shuffles X and y with different permutations", _SGD_HEAD + '''
+    def epoch(carry, _):
+        (w, b), k = carry
+        k, k1, k2 = jax.random.split(k, 3)
+        px = jax.random.permutation(k1, N)[:used]
+        py = jax.random.permutation(k2, N)[:used]      # pairing destroyed
+        Xs = X[px].reshape(nb, batch_size, D)
+        ys = y[py].reshape(nb, batch_size)
+        def batch(p, d):
+            w, b = p; Xb, yb = d
+            e = Xb @ w + b - yb
+            return (w - lr*(2.0/batch_size)*(Xb.T@e),
+                    b - lr*(2.0/batch_size)*jnp.sum(e)), jnp.mean(e**2)
+        (w, b), bl = jax.lax.scan(batch, (w, b), (Xs, ys))
+        return ((w, b), k), jnp.mean(bl)
+    init = ((jnp.zeros(D), jnp.array(0.0)), key)
+    ((w, b), k), losses = jax.lax.scan(epoch, init, None, length=epochs)
+    return w, b, losses, k
+''')))
+
+holes.append(("minibatch_sgd_scan", probe(
+    "minibatch_sgd_scan", "Python loop over epochs instead of an outer scan",
+    _SGD_HEAD + '''
+    w, b, ls = jnp.zeros(D), jnp.array(0.0), []
+    for _ in range(epochs):
+        key, sub = jax.random.split(key)
+        perm = jax.random.permutation(sub, N)[:used]
+        Xs = X[perm].reshape(nb, batch_size, D)
+        ys = y[perm].reshape(nb, batch_size)
+        def batch(p, d):
+            w, b = p; Xb, yb = d
+            e = Xb @ w + b - yb
+            return (w - lr*(2.0/batch_size)*(Xb.T@e),
+                    b - lr*(2.0/batch_size)*jnp.sum(e)), jnp.mean(e**2)
+        (w, b), bl = jax.lax.scan(batch, (w, b), (Xs, ys))
+        ls.append(jnp.mean(bl))
+    return w, b, (jnp.stack(ls) if ls else jnp.zeros((0,))), key
+''')))
+
 print(f"\n{BOLD}{'='*60}{RESET}")
 real_holes = [t for t, ok in holes if ok is True]
 if real_holes:

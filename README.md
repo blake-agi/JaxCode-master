@@ -181,7 +181,7 @@ reporting a diff.
 ## 📚 Problems
 
 <!-- PROBLEMS:START -->
-**59 problems** — 🟢 13 Easy · 🟡 25 Medium · 🔴 21 Hard
+**60 problems** — 🟢 13 Easy · 🟡 25 Medium · 🔴 22 Hard
 
 
 ### JAX Fundamentals (11)
@@ -238,7 +238,7 @@ reporting a diff.
 | 28 | [Mixture of Experts (MoE)](templates/28_moe.ipynb) | 🔴 Hard | `moe` |
 | b_13 | [Mini GPT — assemble the whole model](templates/b_13_mini_gpt.ipynb) | 🔴 Hard | `mini_gpt` |
 
-### Training (10)
+### Training (11)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -252,6 +252,7 @@ reporting a diff.
 | b_15 | [Cross-Entropy: Smoothing & Padding Mask](templates/b_15_cross_entropy_full.ipynb) | 🟡 Medium | `cross_entropy_full` |
 | b_16 | [Masked Diffusion LM Loss](templates/b_16_masked_diffusion.ipynb) | 🟡 Medium | `masked_diffusion` |
 | b_18 | [Linear Regression with lax.scan](templates/b_18_linear_regression_scan.ipynb) | 🟡 Medium | `linear_regression_scan` |
+| b_19 | [Mini-batch SGD with nested lax.scan](templates/b_19_minibatch_sgd_scan.ipynb) | 🔴 Hard | `minibatch_sgd_scan` |
 
 ### Inference & Decoding (6)
 

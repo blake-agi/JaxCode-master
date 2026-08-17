@@ -271,16 +271,23 @@ X = jax.random.normal(jax.random.key(3), (100, 3))
 y = X @ jnp.array([1.0, -2.0, 3.0]) - 0.5
 model = {fn}()
 
-# Structural check FIRST, and deliberately at a small step count: a Python
-# loop is caught here in milliseconds instead of by hanging the timing test
-# below for minutes while it unrolls 20000 steps.
-jaxpr = str(jax.make_jaxpr(lambda X, y: model.gradient_descent(X, y, 0.1, 50))(X, y))
-assert 'scan' in jaxpr, (
-    'No scan in the jaxpr — the loop is being unrolled by Python at trace '
-    f'time. At only 50 steps the graph is already {len(jaxpr.splitlines())} '
-    'lines; a lax.scan version is ~34 lines at ANY step count, because the '
-    'body is compiled once.'
+# The defining property of a scan: the body is compiled once and looped, so
+# the graph SIZE does not depend on the trip count. A Python loop unrolls and
+# grows with it. Checked at tiny step counts, so a wrong answer fails here in
+# milliseconds instead of hanging the timing check below while it unrolls
+# 20000 steps.
+def _graph(steps):
+    return str(jax.make_jaxpr(
+        lambda X, y: model.gradient_descent(X, y, 0.1, steps))(X, y))
+
+small, large = _graph(10), _graph(50)
+n_small, n_large = len(small.splitlines()), len(large.splitlines())
+assert n_small == n_large, (
+    f'The jaxpr grew from {n_small} lines at 10 steps to {n_large} at 50, so '
+    'the loop is being unrolled by Python at trace time. A lax.scan compiles '
+    'its body once, so the graph is the same size at any step count.'
 )
+assert 'scan' in small, 'No scan in the jaxpr'
 
 # Now the payoff that flat graph buys.
 f = jax.jit(model.gradient_descent, static_argnames=('steps',))

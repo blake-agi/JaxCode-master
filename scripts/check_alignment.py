@@ -67,6 +67,11 @@ ADDED = {
     # whole point here is that jit makes that unaffordable (2000 unrolled steps
     # take ~31s to compile; scan does 20000 in ~0.04s).
     "linear_regression_scan",
+    # Nested scan with the PRNG key in the carry. No torch counterpart because
+    # torch shuffles with a stateful global RNG and loops in Python; the whole
+    # difficulty here — split the key, carry the parent, keep the carry
+    # structure identical — only exists in the functional formulation.
+    "minibatch_sgd_scan",
 }
 
 
