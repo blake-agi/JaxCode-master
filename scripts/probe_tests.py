@@ -453,6 +453,80 @@ def denoise_step(key, logits, xt, t, s, *, mask_id):
     return jnp.where(reveal, jnp.argmax(logits, axis=-1), xt)
 ''')))
 
+_LRS_REST = '''
+    def closed_form(self, X, y):
+        N, D = X.shape
+        X_aug = jnp.concatenate([X, jnp.ones((N, 1))], axis=1)
+        theta = jnp.linalg.lstsq(X_aug, y)[0]
+        return theta[:D], theta[D]
+
+    def nn_linear(self, X, y, lr=0.01, steps=1000):
+        D = X.shape[1]
+        layer = nnx.Linear(D, 1, rngs=nnx.Rngs(params=0))
+        def loss_fn(m):
+            return jnp.mean((m(X).squeeze(-1) - y) ** 2)
+        for _ in range(steps):
+            grads = nnx.grad(loss_fn)(layer)
+            state = nnx.state(grads)
+            layer.kernel[...] = layer.kernel[...] - lr * state["kernel"][...]
+            layer.bias[...] = layer.bias[...] - lr * state["bias"][...]
+        return layer.kernel[...].squeeze(-1), layer.bias[...].squeeze()
+'''
+
+# The whole point of b_18 is that the loop is a scan. A correct-but-unrolled
+# answer converges to the same numbers, so only a structural test rejects it.
+holes.append(("linear_regression_scan", probe(
+    "linear_regression_scan", "Python for-loop instead of lax.scan", '''
+import jax, jax.numpy as jnp
+from flax import nnx
+class LinearRegressionScan:
+    def gradient_descent(self, X, y, lr=0.01, steps=1000):
+        N, D = X.shape
+        w, b, losses = jnp.zeros(D), jnp.array(0.0), []
+        for _ in range(steps):
+            error = X @ w + b - y
+            losses.append(jnp.mean(error ** 2))
+            w = w - lr * (2.0 / N) * (X.T @ error)
+            b = b - lr * (2.0 / N) * jnp.sum(error)
+        return w, b, jnp.stack(losses) if losses else jnp.zeros((0,))
+''' + _LRS_REST)))
+
+holes.append(("linear_regression_scan", probe(
+    "linear_regression_scan", "records the loss AFTER the update", '''
+import jax, jax.numpy as jnp
+from flax import nnx
+class LinearRegressionScan:
+    def gradient_descent(self, X, y, lr=0.01, steps=1000):
+        N, D = X.shape
+        def step(carry, _):
+            w, b = carry
+            error = X @ w + b - y
+            gw = (2.0 / N) * (X.T @ error)
+            gb = (2.0 / N) * jnp.sum(error)
+            w2, b2 = w - lr * gw, b - lr * gb
+            return (w2, b2), jnp.mean((X @ w2 + b2 - y) ** 2)   # after, not before
+        (w, b), losses = jax.lax.scan(
+            step, (jnp.zeros(D), jnp.array(0.0)), None, length=steps)
+        return w, b, losses
+''' + _LRS_REST)))
+
+holes.append(("linear_regression_scan", probe(
+    "linear_regression_scan", "drops the loss curve, returns only (w, b)", '''
+import jax, jax.numpy as jnp
+from flax import nnx
+class LinearRegressionScan:
+    def gradient_descent(self, X, y, lr=0.01, steps=1000):
+        N, D = X.shape
+        def step(carry, _):
+            w, b = carry
+            error = X @ w + b - y
+            return (w - lr * (2.0/N) * (X.T @ error),
+                    b - lr * (2.0/N) * jnp.sum(error)), None
+        (w, b), _ = jax.lax.scan(
+            step, (jnp.zeros(D), jnp.array(0.0)), None, length=steps)
+        return w, b
+''' + _LRS_REST)))
+
 print(f"\n{BOLD}{'='*60}{RESET}")
 real_holes = [t for t, ok in holes if ok is True]
 if real_holes:

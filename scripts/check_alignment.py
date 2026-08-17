@@ -62,6 +62,11 @@ ADDED = {
     # (RoPE placement, missing final norm, untied head) only appear once the
     # pieces are put together.
     "mini_gpt",
+    # Problem 40 with the training loop as a lax.scan. The original has no
+    # counterpart because a Python loop is the only way torch writes it — the
+    # whole point here is that jit makes that unaffordable (2000 unrolled steps
+    # take ~31s to compile; scan does 20000 in ~0.04s).
+    "linear_regression_scan",
 }
 
 
