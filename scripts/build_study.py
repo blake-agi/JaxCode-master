@@ -618,7 +618,16 @@ def build_dashboard() -> int:
                     times = f" ({seen}x this round)" if int(seen or 1) > 1 else ""
                     lines.append(f"- **{tag}**{times}{again} — {m.get('what_went_wrong', '')}")
                     if m.get("fix"):
-                        lines.append(f"  - fix: {m['fix']}")
+                        # A fix may carry fenced code and a summary, so it can
+                        # be several lines. Continuation lines are indented to
+                        # column 4 — the content column of the "  - fix:"
+                        # bullet — or markdown ends the list and dumps the code
+                        # at top level. Blank lines stay truly blank; trailing
+                        # spaces would reopen a paragraph in some renderers.
+                        fix_lines = m["fix"].split("\n")
+                        lines.append(f"  - fix: {fix_lines[0]}")
+                        lines.extend(f"    {ln}" if ln.strip() else ""
+                                     for ln in fix_lines[1:])
 
     STUDY_DIR.mkdir(parents=True, exist_ok=True)
     MISTAKES_MD.write_text("\n".join(lines) + "\n")
