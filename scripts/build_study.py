@@ -60,6 +60,9 @@ ATTEMPTS_CSV = STUDY_DIR / "attempts.csv"
 MISTAKES_CSV = STUDY_DIR / "mistakes.csv"
 TRIES_CSV = STUDY_DIR / "tries.csv"
 AID_CSV = STUDY_DIR / "aid.csv"
+# tag -> one takeaway for a pattern that has now recurred. Optional: absent or
+# incomplete just renders a prompt to write one.
+PATTERNS_CSV = STUDY_DIR / "patterns.csv"
 MISTAKES_MD = STUDY_DIR / "MISTAKES.md"
 
 _PROBLEMS_FIELDS = ["order", "number", "task", "function_name", "difficulty", "frequency",
@@ -345,6 +348,7 @@ def build_dashboard() -> int:
     mistakes = _read_csv(MISTAKES_CSV)
     tries_rows = _read_csv(TRIES_CSV)
     aid = _aid_by_task(_read_csv(AID_CSV), attempts)
+    patterns = {r["tag"]: r.get("summary", "") for r in _read_csv(PATTERNS_CSV)}
     progress = _load_progress()
     rounds = rounds_by_task(attempts)
     now = datetime.now()
@@ -564,9 +568,6 @@ def build_dashboard() -> int:
         lines.append("Same root cause, hit more than once — most-repeated first. A pattern "
                       "spanning two different problems is the strongest signal here: it is "
                       "not that problem's quirk, it's a habit.")
-        lines.append("")
-        lines.append("| Times | Pattern | Where |")
-        lines.append("|---|---|---|")
         for total, tag, occ in recurring:
             per_task: dict[str, list[int]] = defaultdict(list)
             for task, rnd, times in occ:
@@ -577,7 +578,18 @@ def build_dashboard() -> int:
                 for t, rs in sorted(per_task.items())
             )
             across = " 🔁" if len(per_task) > 1 else ""
-            lines.append(f"| {total}{across} | `{tag}` | {where} |")
+            lines.append("")
+            lines.append(f"- **`{tag}`** · {total} 次{across} · {where}")
+            # The takeaway is a THIRD piece of writing: neither task's fix, but
+            # what the two of them together mean. It lives in patterns.csv
+            # because it belongs to the tag, not to any one row.
+            summary = patterns.get(tag, "").strip()
+            if summary:
+                for i, ln in enumerate(summary.split("\n")):
+                    lines.append(f"  - {ln}" if i == 0
+                                 else (f"    {ln}" if ln.strip() else ""))
+            else:
+                lines.append("  - 📝 _还没写总结 — 这条已经重复了，值得用一句话说清楚_")
 
     if detailed:
         lines.append("")

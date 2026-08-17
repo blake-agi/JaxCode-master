@@ -62,6 +62,28 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
      `copied`, or a try block whose whole body is a note rather than code.
      Treat these as an *aid* signal (step 6b), not only as mistake material.
 
+2b. **Run anything you are about to assert.** Before a claim about API
+   behaviour goes into a row, execute it — the venv is right there:
+
+   ```bash
+   .venv/bin/python -c "import jax, jax.numpy as jnp; from flax import nnx; ..."
+   ```
+
+   This is not optional care, it is the point. A wrong line in a mistakes log
+   is worse than a missing one, because the user will *believe* it — this log
+   is what they revise from. It has already happened: a row once asserted
+   "`.T` / `@` don't pass through an `nnx.Param`", which three lines of Python
+   would have refuted in ten seconds. It shipped, and had to be corrected
+   later.
+
+   Two things this catches that reading cannot:
+   - The user's own `# !!!` note may be **wrong**. It is evidence of what they
+     believed, not of what is true. When it is wrong, saying so *is* the
+     finding — that is the most valuable row you can write.
+   - Library versions drift. Check the installed one (`flax.__version__`)
+     rather than what you remember; deprecations (`.value` → `[...]`) are
+     exactly the kind of thing a study log should be right about.
+
 3. **Read the reference.** Open `jax_judge/tasks/<task_id>.py` and look at
    `TASK["solution"]` for how the canonical implementation differs from the
    user's final version, in case a real gap survived even in the passing
@@ -102,9 +124,33 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
      single most important thing this log can tell you. Only mint a new tag
      for a genuinely different cause. Tags are also worth reusing across
      tasks when the pattern is the same.
+     **Split by what you need to KNOW, not by how badly it went.** Two rows
+     about the same API belong apart when one is about constructing it and
+     the other about using it (`nnx-param-api` vs `nnx-param-unwrap`); they
+     belong together when they are the same gap seen twice. Whether one was
+     a crash and the other only a wrong belief in a comment is *not* the
+     dividing line.
    - `what_went_wrong`: one sentence, concrete, in the user's own terms
      where possible (their comment is often already the best phrasing).
-   - `fix`: one sentence, what the corrected code actually does differently.
+   - `fix`: **not one line.** A fix worth re-reading is
+     *runnable code + one sentence that generalises it*:
+
+     ~~~
+     <one line of lead-in prose, ending in a colon>
+
+     ```python
+     # the code, with the wrong form and the right form side by side
+     # inline comments carry the ✅ / ⚠️ marks
+     ```
+
+     **总结**：the one sentence you would want in your head at the
+     keyboard next time.
+     ~~~
+
+     Newlines are fine — `build_study.py` indents continuation lines into the
+     bullet, so fenced blocks render. Keep the code SHORT and real: paste
+     what you actually ran, not a sketch. A fix that is one line of prose is
+     acceptable only when the mistake genuinely has no code to show.
 
 5. **Merge into `study/mistakes.csv`.** Fields:
    `task,round,tag,what_went_wrong,fix,first_seen,times_seen`.
@@ -156,12 +202,36 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
    If `aid.csv` already covers the task, change nothing — the machine record
    wins.
 
+6c. **Write the takeaway for any tag that just became recurring.**
+   `study/patterns.csv` (`tag,summary,updated_at`) holds one takeaway per tag,
+   and the Recurring patterns section renders it. A tag with no summary shows
+   a 📝 prompt instead — that prompt is addressed to you, so clear it.
+
+   After step 5, check which tags now total ≥ 2 across all rows (that is the
+   threshold `build_study.py` uses; `no-approach` is excluded as a state
+   rather than a cause). If such a tag has no `patterns.csv` row, write one.
+   Update the existing summary instead when a new occurrence sharpens it.
+
+   **The summary is a THIRD piece of writing** — not a copy of either row's
+   `fix`. Each `fix` says what to do in that problem; the summary says what
+   the two occurrences *together* mean, in a form that applies to a problem
+   not yet seen. Same shape as a `fix` (prose, optional code, `**总结**`), but
+   aimed one level up:
+
+   > `reduce-drops-axis` — not "softmax needs keepdims" and not "layernorm
+   > needs keepdims", but: *a reduce whose result gets broadcast back against
+   > x always needs keepdims — ask whether it is about to be subtracted from
+   > or divided into x.*
+
+   A summary that only restates the tag name in a full sentence is worse than
+   the 📝 prompt, because it looks done.
+
 7. **Regenerate the dashboard.** Run:
    ```bash
    cd jaxcode && python scripts/build_study.py
    ```
-   (adjust the `cd` if already in that directory). This reads all four
-   CSVs and rewrites `study/MISTAKES.md` — never edit that file directly.
+   (adjust the `cd` if already in that directory). This reads every study CSV
+   and rewrites `study/MISTAKES.md` — never edit that file directly.
 
 8. **Commit and push the practice repo.** This is the end of the routine, so
    the work lands without a separate ask. One commit covers both the notebook
@@ -211,9 +281,14 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
   cost of under-logging is a lost lesson.
 - Don't touch `study/attempts.csv` or `study/problems.csv` — those belong to
   `jax_judge.progress.log_attempt()` and `scripts/build_study.py
-  --init-problems` respectively. This skill owns `study/tries.csv` and
-  `study/mistakes.csv` outright, and may only *backfill gaps* in
-  `study/aid.csv`, which `log_aid()` owns.
+  --init-problems` respectively. This skill owns `study/tries.csv`,
+  `study/mistakes.csv` and `study/patterns.csv` outright, and may only
+  *backfill gaps* in `study/aid.csv`, which `log_aid()` owns.
+- Don't rewrite rows from earlier sittings to match a format introduced later.
+  Improve a row when you are already there for a real reason — a new
+  occurrence, a claim you just found to be wrong. Reformatting forty rows in
+  one pass replaces the user's record of their own thinking with your
+  re-derivation of it, which is exactly what this log exists to avoid.
 - Don't delete or rewrite the commented-out attempts in the notebook itself
   — they're the source material and the user's own record; this skill only
   reads them.
