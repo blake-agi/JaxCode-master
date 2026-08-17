@@ -130,10 +130,31 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
      belong together when they are the same gap seen twice. Whether one was
      a crash and the other only a wrong belief in a comment is *not* the
      dividing line.
-   - `what_went_wrong`: one sentence, concrete, in the user's own terms
-     where possible (their comment is often already the best phrasing).
-   - `fix`: **not one line.** A fix worth re-reading is
-     *runnable code + one sentence that generalises it*:
+   **What matters, in order — this is the user's own ranking:**
+   1. `fix` — **the correct code.** This is what gets re-read. Everything
+      else is context for it.
+   2. `what_went_wrong` — the wrong *code* or the wrong *idea*. Concrete.
+   3. Nothing else. **The process of trying is noise: cut it.** "写了 try1
+      就卡住了，没提交过任何一版就去看 hint（3 次）和参考解" is a row saying
+      nothing usable. No try-numbers, no "第一次 check() 就 6/6", no counting
+      hints, no "自己批注" attributions. Those facts already live in
+      `attempts.csv` / `aid.csv` / `tries.csv`, and a dashboard reads them
+      from there. A mistake row is for the *content* of the mistake.
+
+   - `what_went_wrong`: one sentence, and it must name the actual wrong code
+     or wrong belief — quote the offending expression where you can
+     (`` `logits[targets]` —— 以为是每行取目标那一列 ``). If you cannot say
+     what was wrong without narrating how the sitting went, you have not
+     found the mistake yet. For a `no-approach` row this means naming the
+     **knowledge that was missing**, not the fact of being stuck: "缺的是 jit
+     的核心约束：shape 必须在 trace 期就确定" — that is a finding; "写了 try1
+     就卡住了" is not.
+   - `fix`: **the most important field in the row — not one line.** The user
+     re-reads this to answer "对的代码怎么写", so it must be copy-pasteable.
+     Show the wrong form and the right form together, marked ❌ / ✅, with the
+     real error name or the real wrong output on the ❌ line — a fix is much
+     easier to trust when you can see what the failure looked like. Then one
+     sentence that generalises past this problem:
 
      ~~~
      <one line of lead-in prose, ending in a colon>
@@ -284,11 +305,12 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
   --init-problems` respectively. This skill owns `study/tries.csv`,
   `study/mistakes.csv` and `study/patterns.csv` outright, and may only
   *backfill gaps* in `study/aid.csv`, which `log_aid()` owns.
-- Don't rewrite rows from earlier sittings to match a format introduced later.
-  Improve a row when you are already there for a real reason — a new
-  occurrence, a claim you just found to be wrong. Reformatting forty rows in
-  one pass replaces the user's record of their own thinking with your
-  re-derivation of it, which is exactly what this log exists to avoid.
+- Don't rewrite rows from earlier sittings on your own initiative just to
+  match a format introduced later. Improve a row when you are already there
+  for a real reason — a new occurrence, a claim you just found to be wrong.
+  **If the user asks for a sweep, do it** (they did on 2026-08-16); the point
+  is not to touch old rows uninvited, and a sweep is still bound by step 2b:
+  every code sample gets run before it lands.
 - Don't delete or rewrite the commented-out attempts in the notebook itself
   — they're the source material and the user's own record; this skill only
   reads them.
