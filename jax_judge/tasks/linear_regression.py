@@ -12,7 +12,11 @@ TASK = {
         "off. gradient_descent: the MSE gradient is (2/N) X^T(Xw + b - y) and "
         "(2/N) sum(error) — write it by hand, no autodiff. nn_linear: an "
         "nnx.Linear(D, 1) plus a manual SGD loop; remember its kernel is "
-        "(D, 1), so squeeze to get a (D,) weight vector back."
+        "(D, 1), so squeeze to get a (D,) weight vector back. For the update "
+        "itself, nnx.state(layer, nnx.Param) and the grads share a tree "
+        "structure, so a single jax.tree.map writes every parameter at once — "
+        "reach for state['kernel'] by name and the same code stops working on "
+        "any module with more than one layer."
     ),
     "description": r"""
 Solve linear regression three ways and get the same answer each time.
@@ -111,14 +115,19 @@ class LinearRegression:
         D = X.shape[1]
         layer = nnx.Linear(D, 1, rngs=nnx.Rngs(params=0))
 
-        def loss_fn(m):
-            return jnp.mean((m(X).squeeze(-1) - y) ** 2)
+        def loss_fn(model, X, y):
+            return jnp.mean((model(X).squeeze(-1) - y) ** 2)
+
+        grad_fn = nnx.grad(loss_fn)          # transform once, not per step
 
         for _ in range(steps):
-            grads = nnx.grad(loss_fn)(layer)
-            state = nnx.state(grads)
-            layer.kernel[...] = layer.kernel[...] - lr * state["kernel"][...]
-            layer.bias[...] = layer.bias[...] - lr * state["bias"][...]
+            grads = grad_fn(layer, X, y)
+            # nnx.state(layer, nnx.Param) and the grads share a tree structure,
+            # so one tree.map updates EVERY parameter — no names spelled out.
+            # Swap in a two-layer MLP and this line is unchanged; reaching for
+            # state["kernel"] by name would raise KeyError.
+            params = nnx.state(layer, nnx.Param)
+            nnx.update(layer, jax.tree.map(lambda p, g: p - lr * g, params, grads))
 
         # Flax kernel is (D, 1) — the transpose of torch's (1, D).
         return layer.kernel[...].squeeze(-1), layer.bias[...].squeeze()

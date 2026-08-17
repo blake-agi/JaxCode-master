@@ -140,14 +140,16 @@ class LinearRegressionScan:
         D = X.shape[1]
         layer = nnx.Linear(D, 1, rngs=nnx.Rngs(params=0))
 
-        def loss_fn(m):
-            return jnp.mean((m(X).squeeze(-1) - y) ** 2)
+        def loss_fn(model, X, y):
+            return jnp.mean((model(X).squeeze(-1) - y) ** 2)
+
+        grad_fn = nnx.grad(loss_fn)          # transform once, not per step
 
         for _ in range(steps):
-            grads = nnx.grad(loss_fn)(layer)
-            state = nnx.state(grads)
-            layer.kernel[...] = layer.kernel[...] - lr * state["kernel"][...]
-            layer.bias[...] = layer.bias[...] - lr * state["bias"][...]
+            grads = grad_fn(layer, X, y)
+            # One tree.map updates every parameter, whatever the module is.
+            params = nnx.state(layer, nnx.Param)
+            nnx.update(layer, jax.tree.map(lambda p, g: p - lr * g, params, grads))
 
         # Flax kernel is (D, 1) — the transpose of torch's (1, D).
         return layer.kernel[...].squeeze(-1), layer.bias[...].squeeze()
