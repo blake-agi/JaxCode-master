@@ -72,6 +72,11 @@ ADDED = {
     # difficulty here — split the key, carry the parent, keep the carry
     # structure identical — only exists in the functional formulation.
     "minibatch_sgd_scan",
+    # 09 assumes seq_q == seq_k and no padding. This adds a key padding mask on
+    # top of the causal one, where the interesting case is a query row whose
+    # whole window is padding — softmax has no answer, and neither -inf (NaN)
+    # nor -1e9 (silently uniform over padding) expresses that.
+    "causal_attention_padded",
 }
 
 

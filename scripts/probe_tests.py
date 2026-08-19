@@ -596,6 +596,57 @@ holes.append(("minibatch_sgd_scan", probe(
     return w, b, (jnp.stack(ls) if ls else jnp.zeros((0,))), key
 ''')))
 
+
+_CAP_HEAD = """
+import jax, jax.numpy as jnp
+def causal_attention_padded(Q, K, V, key_padding_mask=None):
+    d_k = Q.shape[-1]; seq_q, seq_k = Q.shape[-2], K.shape[-2]
+    scores = (Q @ jnp.swapaxes(K, -1, -2)) / jnp.sqrt(jnp.asarray(d_k, Q.dtype))
+"""
+
+# The one that matters: -1e9 alone makes a dead row UNIFORM, so it returns the
+# mean of the padding vectors — finite, plausible, and wrong.
+holes.append(("causal_attention_padded", probe(
+    "causal_attention_padded", "-1e9 fill but never zeroes the dead rows", _CAP_HEAD + """
+    past = seq_k - seq_q
+    allowed = jnp.tril(jnp.ones((seq_q, seq_k), dtype=bool), k=past)
+    if key_padding_mask is not None:
+        allowed = allowed & key_padding_mask[:, None, None, :]
+    scores = jnp.where(allowed, scores, jnp.asarray(-1e9, scores.dtype))
+    return jax.nn.softmax(scores, axis=-1) @ V
+""")))
+
+holes.append(("causal_attention_padded", probe(
+    "causal_attention_padded", "-inf fill (NaN on a fully masked row)", _CAP_HEAD + """
+    past = seq_k - seq_q
+    allowed = jnp.tril(jnp.ones((seq_q, seq_k), dtype=bool), k=past)
+    if key_padding_mask is not None:
+        allowed = allowed & key_padding_mask[:, None, None, :]
+    scores = jnp.where(allowed, scores, -jnp.inf)
+    return jax.nn.softmax(scores, axis=-1) @ V
+""")))
+
+holes.append(("causal_attention_padded", probe(
+    "causal_attention_padded", "plain tril: forgets the k=past offset", _CAP_HEAD + """
+    allowed = jnp.tril(jnp.ones((seq_q, seq_k), dtype=bool))
+    if key_padding_mask is not None:
+        allowed = allowed & key_padding_mask[:, None, None, :]
+    scores = jnp.where(allowed, scores, jnp.asarray(-1e9, scores.dtype))
+    w = jax.nn.softmax(scores, axis=-1)
+    return jnp.where(jnp.any(allowed, -1, keepdims=True), w, 0.0) @ V
+""")))
+
+holes.append(("causal_attention_padded", probe(
+    "causal_attention_padded", "masks the output instead of the scores", _CAP_HEAD + """
+    past = seq_k - seq_q
+    allowed = jnp.tril(jnp.ones((seq_q, seq_k), dtype=bool), k=past)
+    scores = jnp.where(allowed, scores, jnp.asarray(-1e9, scores.dtype))
+    w = jax.nn.softmax(scores, axis=-1)
+    if key_padding_mask is not None:
+        w = w * key_padding_mask[:, None, None, :]     # after the softmax
+    return w @ V
+""")))
+
 print(f"\n{BOLD}{'='*60}{RESET}")
 real_holes = [t for t, ok in holes if ok is True]
 if real_holes:
