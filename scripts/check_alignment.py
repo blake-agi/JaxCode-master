@@ -77,6 +77,11 @@ ADDED = {
     # whole window is padding — softmax has no answer, and neither -inf (NaN)
     # nor -1e9 (silently uniform over padding) expresses that.
     "causal_attention_padded",
+    # 24 hardcodes pos = arange(T) and shares one table between q and k, which
+    # quietly assumes seq_q == seq_k and a sequence starting at 0. Neither holds
+    # once a KV cache exists — and that is the only place RoPE actually runs at
+    # inference. No torch counterpart; 24 has no cache and 14 has no RoPE.
+    "rope_cached",
 }
 
 

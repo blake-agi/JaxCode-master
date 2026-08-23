@@ -647,6 +647,74 @@ holes.append(("causal_attention_padded", probe(
     return w @ V
 """)))
 
+
+_ROPE_HEAD = """
+import jax, jax.numpy as jnp
+def _rope(x, positions, base):
+    D = x.shape[-1]; half = D // 2
+    inv = 1.0 / (base ** (jnp.arange(half, dtype=jnp.float32) * 2.0 / D))
+    th = positions[:, None].astype(jnp.float32) * inv[None, :]
+    cos, sin = jnp.cos(th), jnp.sin(th)
+    p = x.reshape(*x.shape[:-1], half, 2); e, o = p[..., 0], p[..., 1]
+    return jnp.stack([e*cos - o*sin, e*sin + o*cos], -1).reshape(x.shape)
+
+def _attn(q, k, v):
+    sq, sk, D = q.shape[-2], k.shape[-2], q.shape[-1]
+    s = jnp.einsum('bhqd,bhkd->bhqk', q, k) / jnp.sqrt(jnp.asarray(D, q.dtype))
+    m = jnp.tril(jnp.ones((sq, sk), dtype=bool), k=sk - sq)
+    return jnp.einsum('bhqk,bhkd->bhqd', jax.nn.softmax(jnp.where(m, s, -jnp.inf), -1), v)
+
+def rope_cached_attention(q, k_new, v_new, cache=None, base=10000.0):
+    seq_q = q.shape[-2]
+    seq_past = 0 if cache is None else cache[0].shape[-2]
+"""
+
+# The headline bug: restart positions at 0 for every decode step.
+holes.append(("rope_cached", probe(
+    "rope_cached", "positions restart at 0 instead of seq_past", _ROPE_HEAD + """
+    pos = jnp.arange(seq_q)
+    qr, kr = _rope(q, pos, base), _rope(k_new, pos, base)
+    if cache is not None:
+        k_all = jnp.concatenate([cache[0], kr], -2); v_all = jnp.concatenate([cache[1], v_new], -2)
+    else:
+        k_all, v_all = kr, v_new
+    return _attn(qr, k_all, v_all), (k_all, v_all)
+""")))
+
+holes.append(("rope_cached", probe(
+    "rope_cached", "rotates the cached keys a second time", _ROPE_HEAD + """
+    pos = seq_past + jnp.arange(seq_q)
+    qr, kr = _rope(q, pos, base), _rope(k_new, pos, base)
+    if cache is not None:
+        past = _rope(cache[0], jnp.arange(seq_past), base)     # already rotated!
+        k_all = jnp.concatenate([past, kr], -2); v_all = jnp.concatenate([cache[1], v_new], -2)
+    else:
+        k_all, v_all = kr, v_new
+    return _attn(qr, k_all, v_all), (k_all, v_all)
+""")))
+
+holes.append(("rope_cached", probe(
+    "rope_cached", "rotates q at absolute pos but k_new at 0", _ROPE_HEAD + """
+    qr = _rope(q, seq_past + jnp.arange(seq_q), base)
+    kr = _rope(k_new, jnp.arange(seq_q), base)
+    if cache is not None:
+        k_all = jnp.concatenate([cache[0], kr], -2); v_all = jnp.concatenate([cache[1], v_new], -2)
+    else:
+        k_all, v_all = kr, v_new
+    return _attn(qr, k_all, v_all), (k_all, v_all)
+""")))
+
+holes.append(("rope_cached", probe(
+    "rope_cached", "also rotates v", _ROPE_HEAD + """
+    pos = seq_past + jnp.arange(seq_q)
+    qr, kr, vr = _rope(q, pos, base), _rope(k_new, pos, base), _rope(v_new, pos, base)
+    if cache is not None:
+        k_all = jnp.concatenate([cache[0], kr], -2); v_all = jnp.concatenate([cache[1], vr], -2)
+    else:
+        k_all, v_all = kr, vr
+    return _attn(qr, k_all, v_all), (k_all, v_all)
+""")))
+
 print(f"\n{BOLD}{'='*60}{RESET}")
 real_holes = [t for t, ok in holes if ok is True]
 if real_holes:

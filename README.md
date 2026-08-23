@@ -181,7 +181,7 @@ reporting a diff.
 ## 📚 Problems
 
 <!-- PROBLEMS:START -->
-**61 problems** — 🟢 13 Easy · 🟡 25 Medium · 🔴 23 Hard
+**62 problems** — 🟢 13 Easy · 🟡 25 Medium · 🔴 24 Hard
 
 
 ### JAX Fundamentals (11)
@@ -255,7 +255,7 @@ reporting a diff.
 | b_18 | [Linear Regression with lax.scan](templates/b_18_linear_regression_scan.ipynb) | 🟡 Medium | `linear_regression_scan` |
 | b_19 | [Mini-batch SGD with nested lax.scan](templates/b_19_minibatch_sgd_scan.ipynb) | 🔴 Hard | `minibatch_sgd_scan` |
 
-### Inference & Decoding (6)
+### Inference & Decoding (7)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -265,6 +265,7 @@ reporting a diff.
 | 35 | [Byte-Pair Encoding (BPE)](templates/35_bpe.ipynb) | 🔴 Hard | `bpe` |
 | 36 | [INT8 Quantized Linear](templates/36_int8_quantization.ipynb) | 🔴 Hard | `int8_quantization` |
 | b_17 | [Masked Diffusion Sampling Step](templates/b_17_diffusion_sampling.ipynb) | 🟡 Medium | `diffusion_sampling` |
+| b_21 | [RoPE with a KV Cache](templates/b_21_rope_cached.ipynb) | 🔴 Hard | `rope_cached` |
 
 ### RLHF & Preference Losses (4)
 
