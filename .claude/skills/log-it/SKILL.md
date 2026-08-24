@@ -32,6 +32,24 @@ mistakes for attention"), use that instead of auto-detecting and skip step 1.
 
 ## Steps
 
+0. **Check that what you are about to read is actually on disk.** Run:
+   ```bash
+   cd jaxcode && python scripts/check_notebook_fresh.py
+   ```
+   It compares each notebook's mtime against the last `check()` timestamp in
+   `attempts.csv`. Exit 1 means a task was **run more recently than it was
+   saved**, so the buffer may hold a try that never reached disk — and this
+   routine reads the file, not the editor.
+
+   If it flags the task you are about to log, **say so and stop**: ask the user
+   to save (Cmd+S) and re-run log-it. Do not summarise a stale file; the try
+   worth recording is usually the one that is missing. A flag on some *other*,
+   long-finished task is noise — mention it once and carry on.
+
+   The workspace has `files.autoSave: afterDelay` set, so this should almost
+   never fire. When it does, something turned autosave off or the work happened
+   somewhere else.
+
 1. **Auto-detect the task(s).** Run:
    ```bash
    cd jaxcode && python scripts/list_edited_notebooks.py
