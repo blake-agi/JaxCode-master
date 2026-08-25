@@ -715,6 +715,50 @@ holes.append(("rope_cached", probe(
     return _attn(qr, k_all, v_all), (k_all, v_all)
 """)))
 
+
+_SIG_OK_LS = """
+def stable_log_sigmoid(x):
+    return -jnp.logaddexp(jnp.zeros_like(x), -x)
+"""
+_SIG_OK_S = """
+def stable_sigmoid(x):
+    z = jnp.exp(-jnp.abs(x))
+    return jnp.where(x >= 0, 1.0 / (1.0 + z), z / (1.0 + z))
+"""
+
+# Forward is exactly right at +-800; only the gradient betrays it.
+holes.append(("stable_sigmoid", probe(
+    "stable_sigmoid", "naive 1/(1+exp(-x)) — correct values, NaN gradient", """
+import jax, jax.numpy as jnp
+def stable_sigmoid(x):
+    return 1.0 / (1.0 + jnp.exp(-x))
+""" + _SIG_OK_LS)))
+
+# The textbook two-branch fix: where evaluates both sides, so it is worse.
+holes.append(("stable_sigmoid", probe(
+    "stable_sigmoid", "two-branch jnp.where — NaN gradient at BOTH ends", """
+import jax, jax.numpy as jnp
+def stable_sigmoid(x):
+    return jnp.where(x >= 0, 1.0 / (1.0 + jnp.exp(-x)),
+                     jnp.exp(x) / (1.0 + jnp.exp(x)))
+""" + _SIG_OK_LS)))
+
+holes.append(("stable_sigmoid", probe(
+    "stable_sigmoid", "log_sigmoid as log(sigmoid(x)) — -inf in the forward pass",
+    _SIG_OK_S + """
+import jax, jax.numpy as jnp
+def stable_log_sigmoid(x):
+    return jnp.log(1.0 / (1.0 + jnp.exp(-x)))
+""")))
+
+holes.append(("stable_sigmoid", probe(
+    "stable_sigmoid", "clips the input to +-30 instead of fixing the math",
+    _SIG_OK_LS + """
+import jax, jax.numpy as jnp
+def stable_sigmoid(x):
+    return 1.0 / (1.0 + jnp.exp(-jnp.clip(x, -30.0, 30.0)))
+""")))
+
 print(f"\n{BOLD}{'='*60}{RESET}")
 real_holes = [t for t, ok in holes if ok is True]
 if real_holes:

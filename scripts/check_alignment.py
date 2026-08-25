@@ -82,6 +82,11 @@ ADDED = {
     # once a KV cache exists — and that is the only place RoPE actually runs at
     # inference. No torch counterpart; 24 has no cache and 14 has no RoPE.
     "rope_cached",
+    # The original has relu and gelu but no sigmoid. Worth adding because the
+    # interesting failure is invisible in the forward pass: naive sigmoid gives
+    # exactly the right values at +-800 and NaN gradients, and the textbook
+    # two-branch jnp.where fix makes it NaN at BOTH ends instead of one.
+    "stable_sigmoid",
 }
 
 

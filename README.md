@@ -181,7 +181,7 @@ reporting a diff.
 ## 📚 Problems
 
 <!-- PROBLEMS:START -->
-**62 problems** — 🟢 13 Easy · 🟡 25 Medium · 🔴 24 Hard
+**63 problems** — 🟢 13 Easy · 🟡 26 Medium · 🔴 24 Hard
 
 
 ### JAX Fundamentals (11)
@@ -200,7 +200,7 @@ reporting a diff.
 | b_10 | [Gradient Checkpointing with jax.checkpoint](templates/b_10_remat_checkpoint.ipynb) | 🟡 Medium | `remat_checkpoint` |
 | b_11 | [Data-Parallel Mean with shard_map](templates/b_11_sharding_basics.ipynb) | 🔴 Hard | `sharding_basics` |
 
-### Core Ops & Layers (13)
+### Core Ops & Layers (14)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -217,6 +217,7 @@ reporting a diff.
 | 20 | [Kaiming Initialization](templates/20_weight_init.ipynb) | 🟢 Easy | `weight_init` |
 | 22 | [2D Convolution](templates/22_conv2d.ipynb) | 🟡 Medium | `conv2d` |
 | b_12 | [LogSumExp](templates/b_12_logsumexp.ipynb) | 🟡 Medium | `logsumexp` |
+| b_22 | [Numerically Stable Sigmoid](templates/b_22_stable_sigmoid.ipynb) | 🟡 Medium | `stable_sigmoid` |
 
 ### Attention & Transformers (16)
 
