@@ -315,6 +315,33 @@ _FREQ_WEIGHT = {"🔥": 1.5, "⭐": 1.2}
 _AGE_HALF_LIFE_DAYS = 14.0
 _AGE_MAX = 2.0
 
+
+# CoderPad-style interview environments often ship only jax/jnp — no flax, no
+# optax. A task whose reference solution reaches for those needs rewriting from
+# scratch before it is practice for that setting, so the overview flags it.
+# Derived from the task definition rather than stored, so it cannot go stale.
+_ENV_PATTERNS = (
+    ("flax", re.compile(r"\bflax\b|\bnnx\.")),
+    ("optax", re.compile(r"\boptax\b")),
+)
+
+
+def _extra_deps(tid: str) -> str:
+    """Non-jax libraries a task's own stub/solution depends on."""
+    t = TASKS.get(tid)
+    if not t:
+        return ""
+    src = (t.get("stub", "") or "") + (t.get("solution", "") or "")
+    return "+".join(name for name, rx in _ENV_PATTERNS if rx.search(src))
+
+
+ENV_LEGEND = (
+    "**Env?** blank = pure `jax` / `jnp`, so it runs anywhere. `flax` / `optax` "
+    "= the reference solution needs that library, so it will NOT run in a "
+    "jax-only box (CoderPad and friends) — rewrite it without the library "
+    "before counting it as practice for that setting."
+)
+
 REDO_LEGEND = (
     "**Redo?** 🔴 last round had mistakes and it's high-frequency · 🟡 had "
     "mistakes · ✅ last round was clean · 📝 practised but not logged yet · "
@@ -412,8 +439,10 @@ def build_dashboard() -> int:
     lines.append("")
     lines.append(REDO_LEGEND)
     lines.append("")
-    lines.append("| # | Task | Tag | Difficulty | Freq | Attempts | Try | Aid | Solved | Mistakes | Redo? |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append(ENV_LEGEND)
+    lines.append("")
+    lines.append("| # | Task | Tag | Difficulty | Freq | Env? | Attempts | Try | Aid | Solved | Mistakes | Redo? |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for tid in tasks:
         p = problems.get(tid, {})
         number = _number_for(tid, p)
@@ -459,7 +488,7 @@ def build_dashboard() -> int:
         task_cell = f"[`{tid}`](#mistake-{tid})" if tid in detailed_set else f"`{tid}`"
         lines.append(
             f"| {number or '??'} | {task_cell} | {tag} | {difficulty} | "
-            f"{frequency} | {n_attempts} | {try_count} | {aid.get(tid, '')} | "
+            f"{frequency} | {_extra_deps(tid)} | {n_attempts} | {try_count} | {aid.get(tid, '')} | "
             f"{solved} | {mistakes_cell} | {redo} |"
         )
 
