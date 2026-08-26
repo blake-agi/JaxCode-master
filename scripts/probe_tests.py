@@ -760,123 +760,128 @@ def stable_sigmoid(x):
 """)))
 
 
-_PURE_LIN_OK = """
-import jax, jax.numpy as jnp
-def apply_linear(params, x):
-    y = x @ params["kernel"]
-    return y + params["bias"] if "bias" in params else y
+_LIN = """
+class Linear:
+    def __init__(self, d_in, d_out, *, key):
+        self.kernel = jax.random.normal(key,(d_in,d_out))/jnp.sqrt(d_in)
+        self.bias = jnp.zeros((d_out,))
+    def __call__(self, x): return x @ self.kernel + self.bias
 """
 
-holes.append(("linear_pure", probe(
-    "linear_pure", "use_bias=False still puts a zero bias in the pytree", """
-import jax, jax.numpy as jnp
-def init_linear(key, in_features, out_features, use_bias=True):
-    return {"kernel": jax.random.normal(key,(in_features,out_features))/jnp.sqrt(in_features),
-            "bias": jnp.zeros((out_features,))}
-""" + _PURE_LIN_OK)))
+print(f"\n{BOLD}=== flax-free twins ==={RESET}")
 
 holes.append(("linear_pure", probe(
-    "linear_pure", "kernel transposed, torch (out, in) layout", """
+    "linear_pure", "use_bias=False still stores a zero bias", """
 import jax, jax.numpy as jnp
-def init_linear(key, in_features, out_features, use_bias=True):
-    p = {"kernel": jax.random.normal(key,(out_features,in_features))/jnp.sqrt(in_features)}
-    if use_bias: p["bias"] = jnp.zeros((out_features,))
-    return p
-def apply_linear(params, x):
-    y = x @ params["kernel"].T
-    return y + params["bias"] if "bias" in params else y
+class SimpleLinear:
+    def __init__(self, in_features, out_features, *, key, use_bias=True):
+        self.kernel = jax.random.normal(key,(in_features,out_features))/jnp.sqrt(in_features)
+        self.bias = jnp.zeros((out_features,))
+    def __call__(self, x): return x @ self.kernel + self.bias
 """)))
 
-_MHA_OK_INIT = """
+holes.append(("linear_pure", probe(
+    "linear_pure", "torch (out, in) kernel layout", """
 import jax, jax.numpy as jnp
-def init_mha(key, d_model, num_heads):
-    ks = jax.random.split(key, 4)
-    return {n: {"kernel": jax.random.normal(k,(d_model,d_model))/jnp.sqrt(d_model),
-                "bias": jnp.zeros((d_model,))} for n,k in zip(("W_q","W_k","W_v","W_o"), ks)}
-def _d(p,x): return x @ p["kernel"] + p["bias"]
-"""
-
-holes.append(("mha_pure", probe(
-    "mha_pure", "one key reused for all four projections", """
-import jax, jax.numpy as jnp
-def init_mha(key, d_model, num_heads):
-    return {n: {"kernel": jax.random.normal(key,(d_model,d_model))/jnp.sqrt(d_model),
-                "bias": jnp.zeros((d_model,))} for n in ("W_q","W_k","W_v","W_o")}
-def _d(p,x): return x @ p["kernel"] + p["bias"]
-def apply_mha(params, Q, K, V, num_heads):
-    dm = Q.shape[-1]; dk = dm//num_heads
-    h = lambda t: t.reshape(*t.shape[:-1], num_heads, dk).swapaxes(-3,-2)
-    q,k,v = h(_d(params["W_q"],Q)), h(_d(params["W_k"],K)), h(_d(params["W_v"],V))
-    sc = jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(dk,Q.dtype))
-    o = jnp.einsum("...hqk,...hkd->...hqd", jax.nn.softmax(sc,axis=-1), v).swapaxes(-3,-2)
-    return _d(params["W_o"], o.reshape(*o.shape[:-2], dm))
-""")))
-
-holes.append(("mha_pure", probe(
-    "mha_pure", "merges heads by reshaping before transposing", _MHA_OK_INIT + """
-def apply_mha(params, Q, K, V, num_heads):
-    dm = Q.shape[-1]; dk = dm//num_heads
-    h = lambda t: t.reshape(*t.shape[:-1], num_heads, dk).swapaxes(-3,-2)
-    q,k,v = h(_d(params["W_q"],Q)), h(_d(params["W_k"],K)), h(_d(params["W_v"],V))
-    sc = jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(dk,Q.dtype))
-    o = jnp.einsum("...hqk,...hkd->...hqd", jax.nn.softmax(sc,axis=-1), v)
-    return _d(params["W_o"], o.reshape(*o.shape[:-3], o.shape[-2], dm))
-""")))
-
-holes.append(("kv_cache_pure", probe(
-    "kv_cache_pure", "plain tril: hides the whole cache", """
-import jax, jax.numpy as jnp
-def init_kv_attention(key, d_model, num_heads):
-    ks = jax.random.split(key, 4)
-    return {n: {"kernel": jax.random.normal(k,(d_model,d_model))/jnp.sqrt(d_model),
-                "bias": jnp.zeros((d_model,))} for n,k in zip(("W_q","W_k","W_v","W_o"), ks)}
-def apply_kv_attention(params, x, num_heads, cache=None):
-    d=lambda p,t: t @ p["kernel"] + p["bias"]
-    dm = x.shape[-1]; dk = dm//num_heads
-    h = lambda t: t.reshape(*t.shape[:-1], num_heads, dk).swapaxes(-3,-2)
-    q,k,v = h(d(params["W_q"],x)), h(d(params["W_k"],x)), h(d(params["W_v"],x))
-    if cache is not None:
-        k = jnp.concatenate([cache[0],k],axis=-2); v = jnp.concatenate([cache[1],v],axis=-2)
-    sn, st = q.shape[-2], k.shape[-2]
-    sc = jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(dk,x.dtype))
-    sc = jnp.where(jnp.tril(jnp.ones((sn,st),dtype=bool)), sc, -jnp.inf)
-    o = jnp.einsum("...hqk,...hkd->...hqd", jax.nn.softmax(sc,axis=-1), v).swapaxes(-3,-2)
-    return d(params["W_o"], o.reshape(*o.shape[:-2], dm)), (k, v)
+class SimpleLinear:
+    def __init__(self, in_features, out_features, *, key, use_bias=True):
+        self.kernel = jax.random.normal(key,(out_features,in_features))/jnp.sqrt(in_features)
+        self.bias = jnp.zeros((out_features,)) if use_bias else None
+    def __call__(self, x):
+        y = x @ self.kernel.T
+        return y if self.bias is None else y + self.bias
 """)))
 
 holes.append(("dropout_pure", probe(
-    "dropout_pure", "bernoulli p is the DROP rate (mask inverted)", """
+    "dropout_pure", "bernoulli p read as the DROP rate", """
 import jax, jax.numpy as jnp
-def apply_dropout(x, key, p, *, deterministic=False):
-    if deterministic or p == 0.0: return x
-    keep = jax.random.bernoulli(key, p, x.shape)
-    return jnp.where(keep, x / (1.0 - p), 0.0)
+class MyDropout:
+    def __init__(self, p): self.p = p
+    def __call__(self, x, key, deterministic=False):
+        if deterministic or self.p == 0.0: return x
+        keep = jax.random.bernoulli(key, self.p, x.shape)
+        return jnp.where(keep, x/(1.0-self.p), 0.0)
 """)))
 
 holes.append(("embedding_pure", probe(
     "embedding_pure", "attend forgets the transpose", """
 import jax, jax.numpy as jnp
-def init_embedding(key, num_embeddings, embedding_dim):
-    return {"table": jax.random.normal(key,(num_embeddings,embedding_dim))*0.02}
-def apply_embedding(params, indices): return params["table"][indices]
-def attend_embedding(params, x): return x @ params["table"][:x.shape[-1]]
+class MyEmbedding:
+    def __init__(self, num_embeddings, embedding_dim, *, key):
+        self.table = jax.random.normal(key,(num_embeddings,embedding_dim))*0.02
+    def __call__(self, indices): return self.table[indices]
+    def attend(self, x): return x @ self.table[:x.shape[-1]]
+""")))
+
+holes.append(("mha_pure", probe(
+    "mha_pure", "one key reused for all four projections", _LIN + """
+import jax, jax.numpy as jnp
+class MultiHeadAttention:
+    def __init__(self, d_model, num_heads, *, key):
+        self.h=num_heads; self.d_k=d_model//num_heads
+        self.W_q=Linear(d_model,d_model,key=key); self.W_k=Linear(d_model,d_model,key=key)
+        self.W_v=Linear(d_model,d_model,key=key); self.W_o=Linear(d_model,d_model,key=key)
+    def __call__(self, Q, K, V):
+        sp=lambda t: t.reshape(*t.shape[:-1],self.h,self.d_k).swapaxes(-3,-2)
+        q,k,v=sp(self.W_q(Q)),sp(self.W_k(K)),sp(self.W_v(V))
+        s=jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(self.d_k,q.dtype))
+        o=jnp.einsum("...hqk,...hkd->...hqd",jax.nn.softmax(s,axis=-1),v).swapaxes(-3,-2)
+        return self.W_o(o.reshape(*o.shape[:-2], self.h*self.d_k))
+""")))
+
+holes.append(("mha_pure", probe(
+    "mha_pure", "merges heads by reshaping before swapping", _LIN + """
+import jax, jax.numpy as jnp
+class MultiHeadAttention:
+    def __init__(self, d_model, num_heads, *, key):
+        self.h=num_heads; self.d_k=d_model//num_heads
+        kq,kk,kv,ko=jax.random.split(key,4)
+        self.W_q=Linear(d_model,d_model,key=kq); self.W_k=Linear(d_model,d_model,key=kk)
+        self.W_v=Linear(d_model,d_model,key=kv); self.W_o=Linear(d_model,d_model,key=ko)
+    def __call__(self, Q, K, V):
+        sp=lambda t: t.reshape(*t.shape[:-1],self.h,self.d_k).swapaxes(-3,-2)
+        q,k,v=sp(self.W_q(Q)),sp(self.W_k(K)),sp(self.W_v(V))
+        s=jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(self.d_k,q.dtype))
+        o=jnp.einsum("...hqk,...hkd->...hqd",jax.nn.softmax(s,axis=-1),v)
+        return self.W_o(o.reshape(*o.shape[:-3], o.shape[-2], self.h*self.d_k))
 """)))
 
 holes.append(("cross_attention_pure", probe(
-    "cross_attention_pure", "keys and values read x_q instead of x_kv", """
+    "cross_attention_pure", "keys and values read x_q instead of x_kv", _LIN + """
 import jax, jax.numpy as jnp
-def init_cross_attention(key, d_model, num_heads):
-    ks = jax.random.split(key, 4)
-    return {n: {"kernel": jax.random.normal(k,(d_model,d_model))/jnp.sqrt(d_model),
-                "bias": jnp.zeros((d_model,))} for n,k in zip(("W_q","W_k","W_v","W_o"), ks)}
-def apply_cross_attention(params, x_q, x_kv, num_heads):
-    d=lambda p,t: t @ p["kernel"] + p["bias"]
-    dm = x_q.shape[-1]; dk = dm//num_heads
-    h = lambda t: t.reshape(*t.shape[:-1], num_heads, dk).swapaxes(-3,-2)
-    q,k,v = h(d(params["W_q"],x_q)), h(d(params["W_k"],x_q)), h(d(params["W_v"],x_q))
-    sc = jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(dk,x_q.dtype))
-    o = jnp.einsum("...hqk,...hkd->...hqd", jax.nn.softmax(sc,axis=-1), v).swapaxes(-3,-2)
-    return d(params["W_o"], o.reshape(*o.shape[:-2], dm))
+class MultiHeadCrossAttention:
+    def __init__(self, d_model, num_heads, *, key):
+        self.h=num_heads; self.d_k=d_model//num_heads
+        kq,kk,kv,ko=jax.random.split(key,4)
+        self.W_q=Linear(d_model,d_model,key=kq); self.W_k=Linear(d_model,d_model,key=kk)
+        self.W_v=Linear(d_model,d_model,key=kv); self.W_o=Linear(d_model,d_model,key=ko)
+    def __call__(self, x_q, x_kv):
+        sp=lambda t: t.reshape(*t.shape[:-1],self.h,self.d_k).swapaxes(-3,-2)
+        q,k,v=sp(self.W_q(x_q)),sp(self.W_k(x_q)),sp(self.W_v(x_q))
+        s=jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(self.d_k,q.dtype))
+        o=jnp.einsum("...hqk,...hkd->...hqd",jax.nn.softmax(s,axis=-1),v).swapaxes(-3,-2)
+        return self.W_o(o.reshape(*o.shape[:-2], self.h*self.d_k))
+""")))
+
+holes.append(("kv_cache_pure", probe(
+    "kv_cache_pure", "plain tril: hides the whole cache", _LIN + """
+import jax, jax.numpy as jnp
+class KVCacheAttention:
+    def __init__(self, d_model, num_heads, *, key):
+        self.h=num_heads; self.d_k=d_model//num_heads
+        kq,kk,kv,ko=jax.random.split(key,4)
+        self.W_q=Linear(d_model,d_model,key=kq); self.W_k=Linear(d_model,d_model,key=kk)
+        self.W_v=Linear(d_model,d_model,key=kv); self.W_o=Linear(d_model,d_model,key=ko)
+    def __call__(self, x, cache=None):
+        sp=lambda t: t.reshape(*t.shape[:-1],self.h,self.d_k).swapaxes(-3,-2)
+        q,k,v=sp(self.W_q(x)),sp(self.W_k(x)),sp(self.W_v(x))
+        if cache is not None:
+            k=jnp.concatenate([cache[0],k],axis=-2); v=jnp.concatenate([cache[1],v],axis=-2)
+        s=jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(self.d_k,q.dtype))
+        sn,st=s.shape[-2],s.shape[-1]
+        s=jnp.where(jnp.tril(jnp.ones((sn,st),dtype=bool)), s, -jnp.inf)
+        o=jnp.einsum("...hqk,...hkd->...hqd",jax.nn.softmax(s,axis=-1),v).swapaxes(-3,-2)
+        return self.W_o(o.reshape(*o.shape[:-2], self.h*self.d_k)), (k,v)
 """)))
 
 print(f"\n{BOLD}{'='*60}{RESET}")

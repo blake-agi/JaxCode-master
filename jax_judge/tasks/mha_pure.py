@@ -1,190 +1,187 @@
-"""Problem 06 without Flax — four projections you own yourself."""
+"""Problem 06 without Flax — small enough to type from memory."""
+
+_LINEAR = '''class Linear:
+    """Given to you, exactly as nnx.Linear is given to you in problem 06."""
+
+    def __init__(self, d_in, d_out, *, key):
+        self.kernel = jax.random.normal(key, (d_in, d_out)) / jnp.sqrt(d_in)
+        self.bias = jnp.zeros((d_out,))
+
+    def __call__(self, x):
+        return x @ self.kernel + self.bias
+'''
+
+_WHY = r"""
+### Why this exists alongside problem 06
+Interview sandboxes often ship `jax` alone, so every `nnx.Module` problem here
+is unrunnable there. The API is kept as close to the `nnx` version as it can
+be — same class name, same constructor arguments, same `W_q`/`W_k`/`W_v`/`W_o`
+attributes — so that practising this reinforces problem 06 rather than
+competing with it. Only the key changes hands:
+
+```python
+MultiHeadAttention(8, 2, rngs=nnx.Rngs(params=0))   # nnx
+MultiHeadAttention(8, 2, key=jax.random.key(0))     # here
+```
+
+`Linear` is handed to you in the starter cell for the same reason `nnx.Linear`
+is: the exercise is the attention, not a dense layer typed four times. It is
+six lines, and `b_23` is where you write it yourself.
+
+A plain class is not a pytree, so `jax.grad(loss)(layer)` does not work —
+differentiate with respect to the input instead.
+"""
 
 TASK = {
     "title": "Multi-Head Attention without Flax",
     "category": "Attention & Transformers",
     "number": "b_26",
     "difficulty": "Medium",
-    "function_name": "init_mha",
-    "extra_names": ["apply_mha"],
+    "function_name": "MultiHeadAttention",
     "hint": (
-        "init_mha: split the key four ways and build one (d_model, d_model) "
-        "kernel plus a zero bias for each of W_q, W_k, W_v, W_o, scaled by "
-        "1/sqrt(d_model). Return them as a NESTED dict keyed by those four "
-        "names. apply_mha takes num_heads as an argument because it is a "
-        "hyperparameter, not a parameter — pytrees hold arrays only. Split "
-        "heads with reshape(B, S, H, d_k).transpose(0, 2, 1, 3) and merge by "
-        "transposing back BEFORE the reshape."
+        "__init__: self.h and self.d_k = d_model // num_heads, then four "
+        "Linear(d_model, d_model) from jax.random.split(key, 4). __call__: a "
+        "one-line split helper, "
+        "t.reshape(*t.shape[:-1], self.h, self.d_k).swapaxes(-3, -2), applied "
+        "to each projection; einsum for the scores; softmax; einsum for the "
+        "output; then swapaxes BACK before the final reshape. Scale by "
+        "sqrt(d_k), not sqrt(d_model)."
     ),
     "description": r"""
-Problem 06's multi-head attention with an explicit parameter pytree.
+Problem 06's multi-head attention with no Flax — and short enough to write
+from memory under interview conditions.
 
 ### Signature
 ```python
-def init_mha(key, d_model, num_heads):
-    ...   # -> nested pytree of the four projections
-
-def apply_mha(params, Q, K, V, num_heads):
-    ...   # (B, seq, d_model) x3 -> (B, seq, d_model)
+class MultiHeadAttention:
+    def __init__(self, d_model, num_heads, *, key): ...
+    def __call__(self, Q, K, V): ...     # (B, seq, d_model) x3 -> (B, seq, d_model)
 ```
 
-### The parameter pytree
-```python
-{"W_q": {"kernel": (d_model, d_model), "bias": (d_model,)},
- "W_k": {...}, "W_v": {...}, "W_o": {...}}
-```
-
-Four projections, each `(d_model, d_model)`, kernels scaled by
-`1/sqrt(d_model)` and biases at zero. Split the key **four ways** so the four
-kernels are independent — one key reused four times gives four identical
-matrices, silently.
-
-### Hyperparameters are not parameters
-`num_heads` is an argument to `apply_mha`, not an entry in `params`. A pytree
-holds **arrays**; a stray Python int in it becomes a leaf that `jax.grad` will
-try to differentiate and `jax.tree.map` will try to scale. Under `jit`,
-`num_heads` is static because it determines shapes.
-
-This is the split a module blurs: `self.num_heads` and `self.W_q` look alike
-inside a class, but only one of them is a parameter.
-
-### What is unchanged from 06
-Everything else. Split into heads, scale by `1/sqrt(d_k)`, softmax over the key
-axis, merge, project. Including the trap:
+Four projections named `W_q`, `W_k`, `W_v`, `W_o`, each `Linear(d_model,
+d_model)`, built from **four independent keys**:
 
 ```python
-o = o.swapaxes(-3, -2)                    # (..., H, S, d_k) -> (..., S, H, d_k)
-o = o.reshape(*o.shape[:-2], d_model)     # only NOW is the reshape correct
+kq, kk, kv, ko = jax.random.split(key, 4)
 ```
 
-Use **negative axes and never name the batch**. `vmap` strips the leading axis
-off, so a function that unpacks `B, S, D = Q.shape` stops working the moment
-anyone maps over it.
+One key used four times gives four identical matrices and raises nothing.
 
-reshape does not reorder memory, so `H` and `d_k` have to be adjacent and in
-that order before you collapse them.
-""",
+Scale by `1/sqrt(d_k)` where `d_k = d_model // num_heads` — not
+`1/sqrt(d_model)`.
+
+### Splitting and merging heads
+The one place this reliably goes wrong. `reshape` re-divides memory, it never
+reorders it, so `H` and `d_k` must be adjacent **and in that order**:
+
+```python
+split = lambda t: t.reshape(*t.shape[:-1], self.h, self.d_k).swapaxes(-3, -2)
+...
+o = o.swapaxes(-3, -2)                       # put H next to d_k again
+o = o.reshape(*o.shape[:-2], self.h * self.d_k)   # only NOW may you collapse
+```
+
+Use negative axes and never name the batch — `vmap` strips the leading axis
+off, so anything that unpacks `B, S, D = Q.shape` breaks the moment someone
+maps over it.
+
+### A `Linear` is provided
+The starter cell gives you this, the same way problem 06 gives you
+`nnx.Linear`:
+
+```python
+class Linear:
+    def __init__(self, d_in, d_out, *, key):
+        self.kernel = jax.random.normal(key, (d_in, d_out)) / jnp.sqrt(d_in)
+        self.bias = jnp.zeros((d_out,))
+
+    def __call__(self, x):
+        return x @ self.kernel + self.bias
+```
+""" + _WHY,
     "stub": '''import jax
 import jax.numpy as jnp
 
 
-def init_mha(key, d_model, num_heads):
-    """Parameter pytree: W_q, W_k, W_v, W_o, each a kernel and a bias."""
-    pass  # Replace this
+''' + _LINEAR + '''
 
+class MultiHeadAttention:
+    """Q, K, V -> attention over num_heads heads."""
 
-def apply_mha(params, Q, K, V, num_heads):
-    """(B, seq, d_model) x3 -> (B, seq, d_model)."""
-    pass  # Replace this
+    def __init__(self, d_model, num_heads, *, key):
+        pass  # Replace this
+
+    def __call__(self, Q, K, V):
+        pass  # Replace this
 ''',
     "solution": '''import jax
 import jax.numpy as jnp
 
 
-def init_mha(key, d_model, num_heads):
-    # Four independent keys: reusing one would give four identical kernels.
-    keys = jax.random.split(key, 4)
-    return {
-        name: {
-            "kernel": jax.random.normal(k, (d_model, d_model)) / jnp.sqrt(d_model),
-            "bias": jnp.zeros((d_model,)),
-        }
-        for name, k in zip(("W_q", "W_k", "W_v", "W_o"), keys)
-    }
+''' + _LINEAR + '''
 
+class MultiHeadAttention:
+    def __init__(self, d_model, num_heads, *, key):
+        self.h = num_heads
+        self.d_k = d_model // num_heads
+        # Four independent keys: one reused four times gives four identical
+        # projections, silently.
+        kq, kk, kv, ko = jax.random.split(key, 4)
+        self.W_q = Linear(d_model, d_model, key=kq)
+        self.W_k = Linear(d_model, d_model, key=kk)
+        self.W_v = Linear(d_model, d_model, key=kv)
+        self.W_o = Linear(d_model, d_model, key=ko)
 
-def _dense(p, x):
-    return x @ p["kernel"] + p["bias"]
+    def __call__(self, Q, K, V):
+        # Negative axes throughout, so vmap can strip the batch away.
+        split = lambda t: t.reshape(*t.shape[:-1], self.h, self.d_k).swapaxes(-3, -2)
+        q, k, v = split(self.W_q(Q)), split(self.W_k(K)), split(self.W_v(V))
 
+        s = jnp.einsum("...hqd,...hkd->...hqk", q, k) / jnp.sqrt(
+            jnp.asarray(self.d_k, q.dtype)
+        )
+        o = jnp.einsum("...hqk,...hkd->...hqd", jax.nn.softmax(s, axis=-1), v)
 
-def apply_mha(params, Q, K, V, num_heads):
-    d_model = Q.shape[-1]
-    d_k = d_model // num_heads
-
-    def heads(t):
-        # (..., S, d_model) -> (..., H, S, d_k). H before d_k in the reshape,
-        # because d_model is laid out head-major in memory. Never name the
-        # leading axes, so this survives vmap stripping the batch away.
-        return t.reshape(*t.shape[:-1], num_heads, d_k).swapaxes(-3, -2)
-
-    q = heads(_dense(params["W_q"], Q))
-    k = heads(_dense(params["W_k"], K))
-    v = heads(_dense(params["W_v"], V))
-
-    scores = jnp.einsum("...hqd,...hkd->...hqk", q, k) / jnp.sqrt(
-        jnp.asarray(d_k, Q.dtype)
-    )
-    o = jnp.einsum("...hqk,...hkd->...hqd", jax.nn.softmax(scores, axis=-1), v)
-
-    # Swap FIRST so H and d_k are adjacent, then collapse them.
-    o = o.swapaxes(-3, -2)
-    o = o.reshape(*o.shape[:-2], d_model)
-    return _dense(params["W_o"], o)
+        # Swap FIRST so h and d_k are adjacent, then collapse them.
+        o = o.swapaxes(-3, -2)
+        return self.W_o(o.reshape(*o.shape[:-2], self.h * self.d_k))
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
 
-params = init_mha(jax.random.key(0), d_model=8, num_heads=2)
-print("pytree:", jax.tree.map(lambda a: a.shape, params))
-print("leaves:", len(jax.tree.leaves(params)))
+mha = MultiHeadAttention(8, 2, key=jax.random.key(0))
+print("W_q kernel:", mha.W_q.kernel.shape, " d_k:", mha.d_k)
 
 x = jax.random.normal(jax.random.key(1), (2, 5, 8))
-print("\\nself-attention:", apply_mha(params, x, x, x, 2).shape)
+print("self-attention:", mha(x, x, x).shape)
 
 xq = jax.random.normal(jax.random.key(2), (2, 3, 8))
-print("cross shapes:  ", apply_mha(params, xq, x, x, 2).shape)
+print("different seq_q:", mha(xq, x, x).shape)
 
-g = jax.grad(lambda p: jnp.sum(apply_mha(p, x, x, x, 2)))(params)
-print("\\ngrad reaches", len(jax.tree.leaves(g)), "leaves")
+g = jax.grad(lambda v: jnp.sum(mha(v, v, v)))(x)
+print("\\nd/dx shape:", g.shape)
 ''',
     "tests": [
         {
-            "name": "Pytree structure: four projections, kernel and bias each",
+            "name": "Sub-layers are named and shaped like the nnx version",
             "code": """
 import jax
 import jax.numpy as jnp
 
-p = {fn}(jax.random.key(0), 8, 2)
-assert isinstance(p, dict), f'params should be a dict, got {type(p).__name__}'
-assert set(p) == {'W_q', 'W_k', 'W_v', 'W_o'}, f'top-level keys {sorted(p)}'
+m = {fn}(8, 2, key=jax.random.key(0))
 for name in ('W_q', 'W_k', 'W_v', 'W_o'):
-    sub = p[name]
-    assert set(sub) == {'kernel', 'bias'}, f'{name} keys {sorted(sub)}'
-    assert sub['kernel'].shape == (8, 8), f"{name} kernel {sub['kernel'].shape} vs (8, 8)"
-    assert sub['bias'].shape == (8,), f"{name} bias {sub['bias'].shape} vs (8,)"
-    assert jnp.allclose(sub['bias'], 0.0), f'{name} bias should start at zeros'
+    assert hasattr(m, name), f"missing sub-layer {name} — keep problem 06's names"
+    sub = getattr(m, name)
+    assert hasattr(sub, 'kernel'), f'{name} should be a Linear with a .kernel'
+    assert sub.kernel.shape == (8, 8), f'{name}.kernel {sub.kernel.shape} vs (8, 8)'
 
-leaves = jax.tree.leaves(p)
-assert len(leaves) == 8, f'{len(leaves)} leaves, expected 8 (4 kernels + 4 biases)'
-assert all(hasattr(l, 'shape') for l in leaves), (
-    'Every leaf must be an array — num_heads and d_model are hyperparameters '
-    'and do not belong in the pytree'
-)
-""",
-        },
-        {
-            "name": "The four kernels are independent",
-            "code": """
-import jax
-import jax.numpy as jnp
-
-p = {fn}(jax.random.key(0), 16, 4)
-ks = [p[n]['kernel'] for n in ('W_q', 'W_k', 'W_v', 'W_o')]
+ks = [getattr(m, n).kernel for n in ('W_q', 'W_k', 'W_v', 'W_o')]
 for i in range(4):
     for j in range(i + 1, 4):
         assert not jnp.allclose(ks[i], ks[j]), (
-            'Two projections got identical kernels — split the key four ways '
-            'with jax.random.split(key, 4); one key used four times gives four '
-            'identical matrices and no error'
+            'two projections got identical kernels — split the key four ways '
+            'with jax.random.split(key, 4)'
         )
-
-std = float(jnp.std(ks[0]))
-assert abs(std - 1.0 / 16 ** 0.5) < 0.03, (
-    f'kernel std {std:.4f}, expected ~{1/16**0.5:.4f} = 1/sqrt(d_model)'
-)
-assert jnp.allclose({fn}(jax.random.key(0), 16, 4)['W_q']['kernel'], ks[0]), (
-    'Same key must be reproducible'
-)
 """,
         },
         {
@@ -194,91 +191,95 @@ import jax
 import jax.numpy as jnp
 
 B, S, D, H = 2, 5, 8, 2
-p = {fn}(jax.random.key(0), D, H)
+m = {fn}(D, H, key=jax.random.key(0))
 x = jax.random.normal(jax.random.key(1), (B, S, D))
-out = apply_mha(p, x, x, x, H)
+out = m(x, x, x)
 assert out.shape == (B, S, D), f'{out.shape} vs {(B, S, D)}'
 
 d_k = D // H
-def dense(pp, t): return t @ pp['kernel'] + pp['bias']
-def heads(t): return t.reshape(B, S, H, d_k).transpose(0, 2, 1, 3)
-q, k, v = (heads(dense(p[n], x)) for n in ('W_q', 'W_k', 'W_v'))
-sc = jnp.einsum('bhqd,bhkd->bhqk', q, k) / jnp.sqrt(jnp.asarray(d_k, x.dtype))
-o = jnp.einsum('bhqk,bhkd->bhqd', jax.nn.softmax(sc, axis=-1), v)
-ref = dense(p['W_o'], o.transpose(0, 2, 1, 3).reshape(B, S, D))
+sp = lambda t: t.reshape(B, S, H, d_k).swapaxes(-3, -2)
+q, k, v = sp(m.W_q(x)), sp(m.W_k(x)), sp(m.W_v(x))
+s = jnp.einsum('...hqd,...hkd->...hqk', q, k) / jnp.sqrt(jnp.asarray(d_k, x.dtype))
+o = jnp.einsum('...hqk,...hkd->...hqd', jax.nn.softmax(s, axis=-1), v)
+ref = m.W_o(o.swapaxes(-3, -2).reshape(B, S, D))
 assert jnp.allclose(out, ref, atol=1e-5), (
-    'Disagrees with the reference computation. Common causes: scaling by '
-    'sqrt(d_model) instead of sqrt(d_k), or reshaping to merge heads before '
-    'transposing them next to d_k.'
+    'disagrees with the reference. Common causes: scaling by sqrt(d_model) '
+    'instead of sqrt(d_k), or reshaping to merge heads before swapping them '
+    'next to d_k.'
 )
 """,
         },
         {
-            "name": "Heads are independent, and the merge order is right",
+            "name": "Heads land in the right channels after the merge",
             "code": """
 import jax
 import jax.numpy as jnp
 
 B, S, D, H = 1, 4, 8, 2
-p = {fn}(jax.random.key(0), D, H)
+m = {fn}(D, H, key=jax.random.key(0))
 x = jax.random.normal(jax.random.key(1), (B, S, D))
 
-# Zero W_o so the output is exactly the merged head block, then check that the
-# two heads land in the right halves. A transpose-after-reshape bug interleaves
-# them instead: right shape, wrong bytes.
-p0 = jax.tree.map(lambda a: a, p)
-p0['W_o'] = {'kernel': jnp.eye(D), 'bias': jnp.zeros((D,))}
-merged = apply_mha(p0, x, x, x, H)
+# Make W_o the identity so the output IS the merged head block.
+m.W_o.kernel = jnp.eye(D)
+m.W_o.bias = jnp.zeros((D,))
+merged = m(x, x, x)
 
 d_k = D // H
-def dense(pp, t): return t @ pp['kernel'] + pp['bias']
-def heads(t): return t.reshape(B, S, H, d_k).transpose(0, 2, 1, 3)
-q, k, v = (heads(dense(p0[n], x)) for n in ('W_q', 'W_k', 'W_v'))
-sc = jnp.einsum('bhqd,bhkd->bhqk', q, k) / jnp.sqrt(jnp.asarray(d_k, x.dtype))
-o = jnp.einsum('bhqk,bhkd->bhqd', jax.nn.softmax(sc, axis=-1), v)
+sp = lambda t: t.reshape(B, S, H, d_k).swapaxes(-3, -2)
+q, k, v = sp(m.W_q(x)), sp(m.W_k(x)), sp(m.W_v(x))
+s = jnp.einsum('...hqd,...hkd->...hqk', q, k) / jnp.sqrt(jnp.asarray(d_k, x.dtype))
+o = jnp.einsum('...hqk,...hkd->...hqd', jax.nn.softmax(s, axis=-1), v)
 
 assert jnp.allclose(merged[..., :d_k], o[:, 0], atol=1e-5), (
-    'The first d_k channels should be head 0 — transpose to (B, S, H, d_k) '
-    'BEFORE the reshape, not after'
+    'the first d_k channels should be head 0 — swap to (..., S, H, d_k) BEFORE '
+    'the reshape, not after'
 )
-assert jnp.allclose(merged[..., d_k:], o[:, 1], atol=1e-5), 'Head 1 is misplaced'
+assert jnp.allclose(merged[..., d_k:], o[:, 1], atol=1e-5), 'head 1 is misplaced'
 """,
         },
         {
-            "name": "Gradients reach all eight leaves; jit and vmap work",
+            "name": "Q, K and V are used in the right places",
+            "code": """
+import jax
+import jax.numpy as jnp
+
+m = {fn}(8, 2, key=jax.random.key(0))
+q = jax.random.normal(jax.random.key(1), (1, 3, 8))
+kv = jax.random.normal(jax.random.key(2), (1, 6, 8))
+
+out = m(q, kv, kv)
+assert out.shape == (1, 3, 8), (
+    f'{out.shape} — the output length comes from Q, so seq_q != seq_k must work'
+)
+
+# Perturbing V must move the output; perturbing K must too (it changes the
+# weights); swapping K and V must not be a no-op.
+assert not jnp.allclose(m(q, kv, kv.at[:, 0].add(9.0)), out, atol=1e-4), 'V is ignored'
+assert not jnp.allclose(m(q, kv.at[:, 0].add(9.0), kv), out, atol=1e-4), 'K is ignored'
+assert not jnp.allclose(m(kv[:, :3], kv, kv), out, atol=1e-4), 'Q is ignored'
+""",
+        },
+        {
+            "name": "Gradient w.r.t. the input, jit and vmap",
             "code": """
 import jax
 import jax.numpy as jnp
 
 B, S, D, H = 2, 4, 8, 2
-p = {fn}(jax.random.key(0), D, H)
+m = {fn}(D, H, key=jax.random.key(0))
 x = jax.random.normal(jax.random.key(1), (B, S, D))
+out = m(x, x, x)
 
-g = jax.grad(lambda q: jnp.sum(apply_mha(q, x, x, x, H)))(p)
-leaves = jax.tree.leaves(g)
-assert len(leaves) == 8, f'grad has {len(leaves)} leaves, expected 8'
-assert all(jnp.isfinite(l).all() for l in leaves), 'Non-finite gradient'
-for name in ('W_q', 'W_k', 'W_v', 'W_o'):
-    assert float(jnp.abs(g[name]['kernel']).max()) > 0, (
-        f'{name} kernel got no gradient — it is not being used'
-    )
+g = jax.grad(lambda v: jnp.sum(m(v, v, v)))(x)
+assert g.shape == x.shape and jnp.isfinite(g).all(), 'bad gradient w.r.t. the input'
 
-out = apply_mha(p, x, x, x, H)
-jf = jax.jit(apply_mha, static_argnums=(4,))
-assert jnp.allclose(jf(p, x, x, x, H), out, atol=1e-5), 'jit disagrees'
+assert jnp.allclose(jax.jit(lambda v: m(v, v, v))(x), out, atol=1e-5), 'jit disagrees'
 
-vm = jax.vmap(apply_mha, in_axes=(None, 0, 0, 0, None))(p, x, x, x, H)
+vm = jax.vmap(lambda v: m(v, v, v))(x)
 assert vm.shape == (B, S, D), f'{vm.shape}'
-assert jnp.allclose(vm, out, atol=1e-5), 'vmap over the batch disagrees'
-""",
-        },
-        {
-            "name": "No Flax anywhere",
-            "code": """
-import sys
-
-assert 'flax' not in sys.modules, (
-    'flax got imported — the four projections are yours to build here'
+assert jnp.allclose(vm, out, atol=1e-5), (
+    'vmap over the batch disagrees — do not name the batch axis; use negative '
+    'axes so vmap can strip it'
 )
 """,
         },

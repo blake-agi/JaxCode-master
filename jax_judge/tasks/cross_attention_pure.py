@@ -1,144 +1,145 @@
 """Problem 23 without Flax."""
 
+_LINEAR = '''class Linear:
+    """Given to you, exactly as nnx.Linear is given to you in problem 23."""
+
+    def __init__(self, d_in, d_out, *, key):
+        self.kernel = jax.random.normal(key, (d_in, d_out)) / jnp.sqrt(d_in)
+        self.bias = jnp.zeros((d_out,))
+
+    def __call__(self, x):
+        return x @ self.kernel + self.bias
+'''
+
 TASK = {
     "title": "Cross-Attention without Flax",
     "category": "Attention & Transformers",
     "number": "b_27",
     "difficulty": "Medium",
-    "function_name": "init_cross_attention",
-    "extra_names": ["apply_cross_attention"],
+    "function_name": "MultiHeadCrossAttention",
     "hint": (
-        "The pytree is identical to b_26's — four projections, each a kernel "
-        "and a bias. The only change is where each one is fed: W_q sees x_q, "
-        "while W_k and W_v both see x_kv. Everything downstream is the same "
-        "attention. Do not assume seq_q == seq_kv anywhere: the scores are "
-        "(..., H, seq_q, seq_kv) and the output length comes from Q."
+        "Identical to b_26 apart from one line: W_q reads x_q while W_k and "
+        "W_v both read x_kv. Do not assume seq_q == seq_kv — the scores are "
+        "(..., H, seq_q, seq_kv) and the output length comes from x_q. If your "
+        "b_26 __call__ avoided naming the batch axis, this is nearly a rename."
     ),
     "description": r"""
-Problem 23 with an explicit parameter pytree.
+Problem 23 with no Flax — and, if you have done `b_26`, almost no new code.
 
 ### Signature
 ```python
-def init_cross_attention(key, d_model, num_heads):
-    ...   # -> {"W_q": {...}, "W_k": {...}, "W_v": {...}, "W_o": {...}}
-
-def apply_cross_attention(params, x_q, x_kv, num_heads):
-    ...   # (B, seq_q, d_model), (B, seq_kv, d_model) -> (B, seq_q, d_model)
+class MultiHeadCrossAttention:
+    def __init__(self, d_model, num_heads, *, key): ...
+    def __call__(self, x_q, x_kv): ...
+    # (B, seq_q, d_model), (B, seq_kv, d_model) -> (B, seq_q, d_model)
 ```
 
-Same pytree as `b_26`: four `(d_model, d_model)` kernels scaled by
-`1/sqrt(d_model)`, four zero biases, key split four ways.
+Same four projections as `b_26`: `W_q`, `W_k`, `W_v`, `W_o`, each
+`Linear(d_model, d_model)`, from `jax.random.split(key, 4)`.
 
-### The one line that differs from self-attention
+### The one line that differs
 ```python
-q = W_q(x_q)     # queries from one sequence
-k = W_k(x_kv)    # keys and values from the other
-v = W_v(x_kv)
+q = self.W_q(x_q)      # queries from one sequence
+k = self.W_k(x_kv)     # keys and values from the other
+v = self.W_v(x_kv)
 ```
 
-That is genuinely all of it — which is the point of doing this one right after
-`b_26`. If your `apply_mha` was written without naming the batch axis, this is
-almost a rename.
+That is genuinely all of it — which is why this sits right after `b_26`.
 
 ### The trap it adds
-`seq_q` and `seq_kv` are **different**. The scores are
-`(..., H, seq_q, seq_kv)`, the output length comes from `Q`, and softmax runs
-over the last axis (the keys). Anything that assumed a square score matrix
-breaks here, and a square test case would not notice.
+`seq_q` and `seq_kv` **differ**. The scores are `(..., H, seq_q, seq_kv)`, the
+output length comes from `x_q`, and softmax runs over the last axis (the keys).
+Anything that assumed a square score matrix breaks here, and a square test case
+would not notice.
 
 ### A property worth checking yourself
 Feed the same array as both inputs and you must get exactly self-attention
-back. That single assertion catches most wiring mistakes — a swapped `x_q` /
-`x_kv`, or `W_k` fed the wrong sequence.
+back. That single assertion catches most wiring mistakes — a swapped
+`x_q`/`x_kv`, or `W_k` reading the wrong sequence.
+
+### Why this exists alongside problem 23
+Interview sandboxes often ship `jax` alone. The API is kept as close to the
+`nnx` version as it can be — same class name, same arguments, same attribute
+names — so practising it reinforces problem 23 instead of competing with it.
+Only `rngs=nnx.Rngs(params=0)` becomes `key=jax.random.key(0)`, and `Linear` is
+handed to you the way `nnx.Linear` is.
 """,
     "stub": '''import jax
 import jax.numpy as jnp
 
 
-def init_cross_attention(key, d_model, num_heads):
-    """Parameter pytree: W_q, W_k, W_v, W_o, each a kernel and a bias."""
-    pass  # Replace this
+''' + _LINEAR + '''
 
-
-def apply_cross_attention(params, x_q, x_kv, num_heads):
+class MultiHeadCrossAttention:
     """Queries from x_q attend over keys/values from x_kv."""
-    pass  # Replace this
+
+    def __init__(self, d_model, num_heads, *, key):
+        pass  # Replace this
+
+    def __call__(self, x_q, x_kv):
+        pass  # Replace this
 ''',
     "solution": '''import jax
 import jax.numpy as jnp
 
 
-def init_cross_attention(key, d_model, num_heads):
-    keys = jax.random.split(key, 4)
-    return {
-        name: {
-            "kernel": jax.random.normal(k, (d_model, d_model)) / jnp.sqrt(d_model),
-            "bias": jnp.zeros((d_model,)),
-        }
-        for name, k in zip(("W_q", "W_k", "W_v", "W_o"), keys)
-    }
+''' + _LINEAR + '''
 
+class MultiHeadCrossAttention:
+    def __init__(self, d_model, num_heads, *, key):
+        self.h = num_heads
+        self.d_k = d_model // num_heads
+        kq, kk, kv, ko = jax.random.split(key, 4)
+        self.W_q = Linear(d_model, d_model, key=kq)
+        self.W_k = Linear(d_model, d_model, key=kk)
+        self.W_v = Linear(d_model, d_model, key=kv)
+        self.W_o = Linear(d_model, d_model, key=ko)
 
-def _dense(p, x):
-    return x @ p["kernel"] + p["bias"]
+    def __call__(self, x_q, x_kv):
+        split = lambda t: t.reshape(*t.shape[:-1], self.h, self.d_k).swapaxes(-3, -2)
+        # The entire difference from self-attention is these three lines.
+        q = split(self.W_q(x_q))
+        k = split(self.W_k(x_kv))
+        v = split(self.W_v(x_kv))
 
+        # (..., h, seq_q, seq_kv) — not square, so nothing may assume it is.
+        s = jnp.einsum("...hqd,...hkd->...hqk", q, k) / jnp.sqrt(
+            jnp.asarray(self.d_k, q.dtype)
+        )
+        o = jnp.einsum("...hqk,...hkd->...hqd", jax.nn.softmax(s, axis=-1), v)
 
-def apply_cross_attention(params, x_q, x_kv, num_heads):
-    d_model = x_q.shape[-1]
-    d_k = d_model // num_heads
-
-    def heads(t):
-        return t.reshape(*t.shape[:-1], num_heads, d_k).swapaxes(-3, -2)
-
-    # The whole difference from self-attention: q from x_q, k/v from x_kv.
-    q = heads(_dense(params["W_q"], x_q))
-    k = heads(_dense(params["W_k"], x_kv))
-    v = heads(_dense(params["W_v"], x_kv))
-
-    # (..., H, seq_q, seq_kv) — not square, so nothing may assume it is.
-    scores = jnp.einsum("...hqd,...hkd->...hqk", q, k) / jnp.sqrt(
-        jnp.asarray(d_k, x_q.dtype)
-    )
-    o = jnp.einsum("...hqk,...hkd->...hqd", jax.nn.softmax(scores, axis=-1), v)
-
-    o = o.swapaxes(-3, -2)
-    o = o.reshape(*o.shape[:-2], d_model)
-    return _dense(params["W_o"], o)
+        o = o.swapaxes(-3, -2)
+        return self.W_o(o.reshape(*o.shape[:-2], self.h * self.d_k))
 ''',
     "demo": '''import jax
 import jax.numpy as jnp
 
-params = init_cross_attention(jax.random.key(0), d_model=8, num_heads=2)
+ca = MultiHeadCrossAttention(8, 2, key=jax.random.key(0))
 
 x_q = jax.random.normal(jax.random.key(1), (2, 3, 8))    # 3 queries
 x_kv = jax.random.normal(jax.random.key(2), (2, 7, 8))   # 7 keys/values
-print("seq_q=3, seq_kv=7 ->", apply_cross_attention(params, x_q, x_kv, 2).shape)
+print("seq_q=3, seq_kv=7 ->", ca(x_q, x_kv).shape)
 
-# Same input twice must reduce to self-attention.
 x = jax.random.normal(jax.random.key(3), (2, 5, 8))
-same = apply_cross_attention(params, x, x, 2)
-print("cross(x, x) shape: ", same.shape)
-print("that IS self-attention — the best single check of the wiring")
+print("\\ncross(x, x) is self-attention — the best single check of the wiring")
+print("  shape:", ca(x, x).shape)
 ''',
     "tests": [
         {
-            "name": "Pytree structure and independent kernels",
+            "name": "Sub-layers named and shaped like the nnx version",
             "code": """
 import jax
 import jax.numpy as jnp
 
-p = {fn}(jax.random.key(0), 8, 2)
-assert set(p) == {'W_q', 'W_k', 'W_v', 'W_o'}, f'top-level keys {sorted(p)}'
-for name in p:
-    assert set(p[name]) == {'kernel', 'bias'}, f'{name} keys {sorted(p[name])}'
-    assert p[name]['kernel'].shape == (8, 8), f"{name} kernel {p[name]['kernel'].shape}"
-    assert p[name]['bias'].shape == (8,), f"{name} bias {p[name]['bias'].shape}"
-assert len(jax.tree.leaves(p)) == 8, f'{len(jax.tree.leaves(p))} leaves, expected 8'
+m = {fn}(8, 2, key=jax.random.key(0))
+for name in ('W_q', 'W_k', 'W_v', 'W_o'):
+    assert hasattr(m, name), f'missing sub-layer {name}'
+    assert getattr(m, name).kernel.shape == (8, 8), f'{name}.kernel wrong shape'
 
-ks = [p[n]['kernel'] for n in ('W_q', 'W_k', 'W_v', 'W_o')]
+ks = [getattr(m, n).kernel for n in ('W_q', 'W_k', 'W_v', 'W_o')]
 for i in range(4):
     for j in range(i + 1, 4):
-        assert not jnp.allclose(ks[i], ks[j]), 'Two projections share a kernel — split the key 4 ways'
+        assert not jnp.allclose(ks[i], ks[j]), 'two projections share a kernel — split the key 4 ways'
 """,
         },
         {
@@ -147,16 +148,16 @@ for i in range(4):
 import jax
 import jax.numpy as jnp
 
-p = {fn}(jax.random.key(0), 8, 2)
+m = {fn}(8, 2, key=jax.random.key(0))
 for seq_q, seq_kv in [(3, 7), (7, 3), (1, 5), (4, 4)]:
     xq = jax.random.normal(jax.random.key(1), (2, seq_q, 8))
     xkv = jax.random.normal(jax.random.key(2), (2, seq_kv, 8))
-    out = apply_cross_attention(p, xq, xkv, 2)
+    out = m(xq, xkv)
     assert out.shape == (2, seq_q, 8), (
         f'seq_q={seq_q}, seq_kv={seq_kv} gave {out.shape}, expected {(2, seq_q, 8)} '
-        '— the output length comes from Q, the key axis from x_kv'
+        '— the output length comes from x_q'
     )
-    assert jnp.isfinite(out).all(), f'Non-finite output at {seq_q}x{seq_kv}'
+    assert jnp.isfinite(out).all(), f'non-finite output at {seq_q}x{seq_kv}'
 """,
         },
         {
@@ -166,20 +167,19 @@ import jax
 import jax.numpy as jnp
 
 B, S, D, H = 2, 5, 8, 2
-p = {fn}(jax.random.key(0), D, H)
+m = {fn}(D, H, key=jax.random.key(0))
 x = jax.random.normal(jax.random.key(1), (B, S, D))
 
 d_k = D // H
-def dense(pp, t): return t @ pp['kernel'] + pp['bias']
-def heads(t): return t.reshape(*t.shape[:-1], H, d_k).swapaxes(-3, -2)
-q, k, v = (heads(dense(p[n], x)) for n in ('W_q', 'W_k', 'W_v'))
-sc = jnp.einsum('...hqd,...hkd->...hqk', q, k) / jnp.sqrt(jnp.asarray(d_k, x.dtype))
-o = jnp.einsum('...hqk,...hkd->...hqd', jax.nn.softmax(sc, axis=-1), v)
-ref = dense(p['W_o'], o.swapaxes(-3, -2).reshape(*o.shape[:-3], S, D))
+sp = lambda t: t.reshape(B, S, H, d_k).swapaxes(-3, -2)
+q, k, v = sp(m.W_q(x)), sp(m.W_k(x)), sp(m.W_v(x))
+s = jnp.einsum('...hqd,...hkd->...hqk', q, k) / jnp.sqrt(jnp.asarray(d_k, x.dtype))
+o = jnp.einsum('...hqk,...hkd->...hqd', jax.nn.softmax(s, axis=-1), v)
+ref = m.W_o(o.swapaxes(-3, -2).reshape(B, S, D))
 
-assert jnp.allclose(apply_cross_attention(p, x, x, H), ref, atol=1e-5), (
-    'cross(x, x) must equal self-attention. If it does not, the wiring is off '
-    '— check that W_k and W_v both read x_kv and W_q reads x_q.'
+assert jnp.allclose(m(x, x), ref, atol=1e-5), (
+    'cross(x, x) must equal self-attention. Check that W_k and W_v both read '
+    'x_kv while W_q reads x_q.'
 )
 """,
         },
@@ -189,61 +189,42 @@ assert jnp.allclose(apply_cross_attention(p, x, x, H), ref, atol=1e-5), (
 import jax
 import jax.numpy as jnp
 
-p = {fn}(jax.random.key(0), 8, 2)
+m = {fn}(8, 2, key=jax.random.key(0))
 xq = jax.random.normal(jax.random.key(1), (1, 4, 8))
 xkv = jax.random.normal(jax.random.key(2), (1, 4, 8))
+a = m(xq, xkv)
 
-a = apply_cross_attention(p, xq, xkv, 2)
-b = apply_cross_attention(p, xkv, xq, 2)
-assert not jnp.allclose(a, b, atol=1e-4), (
-    'Swapping x_q and x_kv changed nothing — one of them is being ignored'
+assert not jnp.allclose(a, m(xkv, xq), atol=1e-4), (
+    'swapping x_q and x_kv changed nothing — one of them is being ignored'
 )
-
-# Perturbing x_kv must move the output: keys and values come from there.
-xkv2 = xkv.at[:, 0].add(5.0)
-assert not jnp.allclose(apply_cross_attention(p, xq, xkv2, 2), a, atol=1e-4), (
-    'Changing x_kv did not change the output — W_k / W_v are reading x_q'
+assert not jnp.allclose(m(xq, xkv.at[:, 0].add(5.0)), a, atol=1e-4), (
+    'changing x_kv did not change the output — W_k / W_v are reading x_q'
 )
-# And perturbing x_q must move it too.
-xq2 = xq.at[:, 0].add(5.0)
-assert not jnp.allclose(apply_cross_attention(p, xq2, xkv, 2), a, atol=1e-4), (
-    'Changing x_q did not change the output'
+assert not jnp.allclose(m(xq.at[:, 0].add(5.0), xkv), a, atol=1e-4), (
+    'changing x_q did not change the output'
 )
 """,
         },
         {
-            "name": "Gradients, jit and vmap",
+            "name": "Gradient w.r.t. the input, jit and vmap",
             "code": """
 import jax
 import jax.numpy as jnp
 
-p = {fn}(jax.random.key(0), 8, 2)
+m = {fn}(8, 2, key=jax.random.key(0))
 xq = jax.random.normal(jax.random.key(1), (2, 3, 8))
 xkv = jax.random.normal(jax.random.key(2), (2, 7, 8))
+out = m(xq, xkv)
 
-g = jax.grad(lambda q: jnp.sum(apply_cross_attention(q, xq, xkv, 2)))(p)
-assert len(jax.tree.leaves(g)) == 8, f'{len(jax.tree.leaves(g))} grad leaves, expected 8'
-assert all(jnp.isfinite(l).all() for l in jax.tree.leaves(g)), 'Non-finite gradient'
-for name in ('W_q', 'W_k', 'W_v', 'W_o'):
-    assert float(jnp.abs(g[name]['kernel']).max()) > 0, f'{name} got no gradient'
+g = jax.grad(lambda v: jnp.sum(m(v, xkv)))(xq)
+assert g.shape == xq.shape and jnp.isfinite(g).all(), 'bad gradient w.r.t. x_q'
 
-out = apply_cross_attention(p, xq, xkv, 2)
-jf = jax.jit(apply_cross_attention, static_argnums=(3,))
-assert jnp.allclose(jf(p, xq, xkv, 2), out, atol=1e-5), 'jit disagrees'
+assert jnp.allclose(jax.jit(lambda a, b: m(a, b))(xq, xkv), out, atol=1e-5), 'jit disagrees'
 
-vm = jax.vmap(apply_cross_attention, in_axes=(None, 0, 0, None))(p, xq, xkv, 2)
+vm = jax.vmap(lambda a, b: m(a, b))(xq, xkv)
 assert jnp.allclose(vm, out, atol=1e-5), (
-    'vmap over the batch disagrees — do not name the batch axis; use negative '
-    'axes so vmap can strip it'
+    'vmap over the batch disagrees — use negative axes so vmap can strip it'
 )
-""",
-        },
-        {
-            "name": "No Flax anywhere",
-            "code": """
-import sys
-
-assert 'flax' not in sys.modules, 'flax got imported'
 """,
         },
     ],
