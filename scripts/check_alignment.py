@@ -87,6 +87,12 @@ ADDED = {
     # exactly the right values at +-800 and NaN gradients, and the textbook
     # two-branch jnp.where fix makes it NaN at BOTH ends instead of one.
     "stable_sigmoid",
+    # Flax-free twins of the nnx problems. Interview sandboxes (CoderPad and
+    # friends) often ship jax alone, which makes every nnx.Module problem here
+    # unrunnable there — and the rewrite is not mechanical: without a module,
+    # the parameter pytree and the RNG key both become yours to carry.
+    "linear_pure", "embedding_pure", "dropout_pure",
+    "mha_pure", "cross_attention_pure", "kv_cache_pure",
 }
 
 

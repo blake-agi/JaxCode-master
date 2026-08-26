@@ -181,7 +181,7 @@ reporting a diff.
 ## 📚 Problems
 
 <!-- PROBLEMS:START -->
-**63 problems** — 🟢 13 Easy · 🟡 26 Medium · 🔴 24 Hard
+**69 problems** — 🟢 16 Easy · 🟡 28 Medium · 🔴 25 Hard
 
 
 ### JAX Fundamentals (11)
@@ -200,7 +200,7 @@ reporting a diff.
 | b_10 | [Gradient Checkpointing with jax.checkpoint](templates/b_10_remat_checkpoint.ipynb) | 🟡 Medium | `remat_checkpoint` |
 | b_11 | [Data-Parallel Mean with shard_map](templates/b_11_sharding_basics.ipynb) | 🔴 Hard | `sharding_basics` |
 
-### Core Ops & Layers (14)
+### Core Ops & Layers (17)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -218,8 +218,11 @@ reporting a diff.
 | 22 | [2D Convolution](templates/22_conv2d.ipynb) | 🟡 Medium | `conv2d` |
 | b_12 | [LogSumExp](templates/b_12_logsumexp.ipynb) | 🟡 Medium | `logsumexp` |
 | b_22 | [Numerically Stable Sigmoid](templates/b_22_stable_sigmoid.ipynb) | 🟡 Medium | `stable_sigmoid` |
+| b_23 | [Linear Layer without Flax](templates/b_23_linear_pure.ipynb) | 🟢 Easy | `linear_pure` |
+| b_24 | [Embedding without Flax](templates/b_24_embedding_pure.ipynb) | 🟢 Easy | `embedding_pure` |
+| b_25 | [Dropout without Flax](templates/b_25_dropout_pure.ipynb) | 🟢 Easy | `dropout_pure` |
 
-### Attention & Transformers (16)
+### Attention & Transformers (19)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -239,6 +242,9 @@ reporting a diff.
 | 28 | [Mixture of Experts (MoE)](templates/28_moe.ipynb) | 🔴 Hard | `moe` |
 | b_13 | [Mini GPT — assemble the whole model](templates/b_13_mini_gpt.ipynb) | 🔴 Hard | `mini_gpt` |
 | b_20 | [Causal Attention with Padding](templates/b_20_causal_attention_padded.ipynb) | 🔴 Hard | `causal_attention_padded` |
+| b_26 | [Multi-Head Attention without Flax](templates/b_26_mha_pure.ipynb) | 🟡 Medium | `mha_pure` |
+| b_27 | [Cross-Attention without Flax](templates/b_27_cross_attention_pure.ipynb) | 🟡 Medium | `cross_attention_pure` |
+| b_28 | [KV Cache Attention without Flax](templates/b_28_kv_cache_pure.ipynb) | 🔴 Hard | `kv_cache_pure` |
 
 ### Training (11)
 
