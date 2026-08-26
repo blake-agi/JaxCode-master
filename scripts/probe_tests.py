@@ -884,6 +884,170 @@ class KVCacheAttention:
         return self.W_o(o.reshape(*o.shape[:-2], self.h*self.d_k)), (k,v)
 """)))
 
+
+holes.append(("mlp_pure", probe(
+    "mlp_pure", "one key reused -> gate and up identical", _LIN + """
+import jax, jax.numpy as jnp
+class SwiGLUMLP:
+    def __init__(self, d_model, d_ff, *, key):
+        self.gate_proj=Linear(d_model,d_ff,key=key); self.up_proj=Linear(d_model,d_ff,key=key)
+        self.down_proj=Linear(d_ff,d_model,key=key)
+    def __call__(self, x):
+        return self.down_proj(jax.nn.silu(self.gate_proj(x))*self.up_proj(x))
+""")))
+
+holes.append(("mlp_pure", probe(
+    "mlp_pure", "relu instead of silu", _LIN + """
+import jax, jax.numpy as jnp
+class SwiGLUMLP:
+    def __init__(self, d_model, d_ff, *, key):
+        kg,ku,kd=jax.random.split(key,3)
+        self.gate_proj=Linear(d_model,d_ff,key=kg); self.up_proj=Linear(d_model,d_ff,key=ku)
+        self.down_proj=Linear(d_ff,d_model,key=kd)
+    def __call__(self, x):
+        return self.down_proj(jax.nn.relu(self.gate_proj(x))*self.up_proj(x))
+""")))
+
+holes.append(("gqa_pure", probe(
+    "gqa_pure", "tiles the KV heads instead of repeating", _LIN + """
+import jax, jax.numpy as jnp
+class GroupQueryAttention:
+    def __init__(self, d_model, num_heads, num_kv_heads, *, key):
+        self.h=num_heads; self.kvh=num_kv_heads; self.d_k=d_model//num_heads
+        kq,kk,kv,ko=jax.random.split(key,4)
+        self.W_q=Linear(d_model,d_model,key=kq)
+        self.W_k=Linear(d_model,num_kv_heads*self.d_k,key=kk)
+        self.W_v=Linear(d_model,num_kv_heads*self.d_k,key=kv)
+        self.W_o=Linear(d_model,d_model,key=ko)
+    def __call__(self, x):
+        sp=lambda t,n: t.reshape(*t.shape[:-1],n,self.d_k).swapaxes(-3,-2)
+        q,k,v=sp(self.W_q(x),self.h),sp(self.W_k(x),self.kvh),sp(self.W_v(x),self.kvh)
+        r=self.h//self.kvh
+        k=jnp.concatenate([k]*r,axis=-3); v=jnp.concatenate([v]*r,axis=-3)
+        s=jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(self.d_k,x.dtype))
+        o=jnp.einsum("...hqk,...hkd->...hqd",jax.nn.softmax(s,axis=-1),v).swapaxes(-3,-2)
+        return self.W_o(o.reshape(*o.shape[:-2], self.h*self.d_k))
+""")))
+
+holes.append(("gqa_pure", probe(
+    "gqa_pure", "W_k/W_v full width (no saving at all)", _LIN + """
+import jax, jax.numpy as jnp
+class GroupQueryAttention:
+    def __init__(self, d_model, num_heads, num_kv_heads, *, key):
+        self.h=num_heads; self.kvh=num_kv_heads; self.d_k=d_model//num_heads
+        kq,kk,kv,ko=jax.random.split(key,4)
+        self.W_q=Linear(d_model,d_model,key=kq); self.W_k=Linear(d_model,d_model,key=kk)
+        self.W_v=Linear(d_model,d_model,key=kv); self.W_o=Linear(d_model,d_model,key=ko)
+    def __call__(self, x):
+        sp=lambda t,n: t.reshape(*t.shape[:-1],n,self.d_k).swapaxes(-3,-2)
+        q,k,v=sp(self.W_q(x),self.h),sp(self.W_k(x),self.h),sp(self.W_v(x),self.h)
+        s=jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(self.d_k,x.dtype))
+        o=jnp.einsum("...hqk,...hkd->...hqd",jax.nn.softmax(s,axis=-1),v).swapaxes(-3,-2)
+        return self.W_o(o.reshape(*o.shape[:-2], self.h*self.d_k))
+""")))
+
+_G2 = _LIN + """
+class LayerNorm:
+    def __init__(self, d_model, eps=1e-6):
+        self.scale=jnp.ones((d_model,)); self.bias=jnp.zeros((d_model,)); self.eps=eps
+    def __call__(self, x):
+        mu=jnp.mean(x,axis=-1,keepdims=True); var=jnp.var(x,axis=-1,keepdims=True)
+        return (x-mu)/jnp.sqrt(var+self.eps)*self.scale+self.bias
+class CausalSelfAttention:
+    def __init__(self, d_model, num_heads, *, key):
+        self.h=num_heads; self.d_head=d_model//num_heads
+        k1,k2=jax.random.split(key,2)
+        self.qkv=Linear(d_model,3*d_model,key=k1); self.out=Linear(d_model,d_model,key=k2)
+    def __call__(self, x):
+        q,k,v=jnp.split(self.qkv(x),3,axis=-1)
+        sp=lambda t: t.reshape(*t.shape[:-1],self.h,self.d_head).swapaxes(-3,-2)
+        q,k,v=sp(q),sp(k),sp(v)
+        s=jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(self.d_head,x.dtype))
+        T=s.shape[-1]
+        s=jnp.where(jnp.tril(jnp.ones((T,T),dtype=bool)),s,-jnp.inf)
+        o=jnp.einsum("...hqk,...hkd->...hqd",jax.nn.softmax(s,axis=-1),v).swapaxes(-3,-2)
+        return self.out(o.reshape(*o.shape[:-2], self.h*self.d_head))
+class MLP:
+    def __init__(self, d_model, *, key):
+        k1,k2=jax.random.split(key,2)
+        self.fc=Linear(d_model,4*d_model,key=k1); self.proj=Linear(4*d_model,d_model,key=k2)
+    def __call__(self, x): return self.proj(jax.nn.gelu(self.fc(x)))
+"""
+
+holes.append(("gpt2_block_pure", probe(
+    "gpt2_block_pure", "post-norm: normalises the residual stream", _G2 + """
+class GPT2Block:
+    def __init__(self, d_model, num_heads, *, key):
+        ka,km=jax.random.split(key,2)
+        self.ln1=LayerNorm(d_model); self.attn=CausalSelfAttention(d_model,num_heads,key=ka)
+        self.ln2=LayerNorm(d_model); self.mlp=MLP(d_model,key=km)
+    def __call__(self, x):
+        x=self.ln1(x+self.attn(x))
+        return self.ln2(x+self.mlp(x))
+""")))
+
+holes.append(("gpt2_block_pure", probe(
+    "gpt2_block_pure", "no causal mask", _LIN + """
+class LayerNorm:
+    def __init__(self, d_model, eps=1e-6):
+        self.scale=jnp.ones((d_model,)); self.bias=jnp.zeros((d_model,)); self.eps=eps
+    def __call__(self, x):
+        mu=jnp.mean(x,axis=-1,keepdims=True); var=jnp.var(x,axis=-1,keepdims=True)
+        return (x-mu)/jnp.sqrt(var+self.eps)*self.scale+self.bias
+class CausalSelfAttention:
+    def __init__(self, d_model, num_heads, *, key):
+        self.h=num_heads; self.d_head=d_model//num_heads
+        k1,k2=jax.random.split(key,2)
+        self.qkv=Linear(d_model,3*d_model,key=k1); self.out=Linear(d_model,d_model,key=k2)
+    def __call__(self, x):
+        q,k,v=jnp.split(self.qkv(x),3,axis=-1)
+        sp=lambda t: t.reshape(*t.shape[:-1],self.h,self.d_head).swapaxes(-3,-2)
+        q,k,v=sp(q),sp(k),sp(v)
+        s=jnp.einsum("...hqd,...hkd->...hqk",q,k)/jnp.sqrt(jnp.asarray(self.d_head,x.dtype))
+        o=jnp.einsum("...hqk,...hkd->...hqd",jax.nn.softmax(s,axis=-1),v).swapaxes(-3,-2)
+        return self.out(o.reshape(*o.shape[:-2], self.h*self.d_head))
+class MLP:
+    def __init__(self, d_model, *, key):
+        k1,k2=jax.random.split(key,2)
+        self.fc=Linear(d_model,4*d_model,key=k1); self.proj=Linear(4*d_model,d_model,key=k2)
+    def __call__(self, x): return self.proj(jax.nn.gelu(self.fc(x)))
+class GPT2Block:
+    def __init__(self, d_model, num_heads, *, key):
+        ka,km=jax.random.split(key,2)
+        self.ln1=LayerNorm(d_model); self.attn=CausalSelfAttention(d_model,num_heads,key=ka)
+        self.ln2=LayerNorm(d_model); self.mlp=MLP(d_model,key=km)
+    def __call__(self, x):
+        x=x+self.attn(self.ln1(x)); return x+self.mlp(self.ln2(x))
+""")))
+
+holes.append(("lora_pure", probe(
+    "lora_pure", "both A and B random (adapter is not a no-op at init)", _LIN + """
+import jax, jax.numpy as jnp
+class LoRALinear:
+    def __init__(self, in_features, out_features, rank, alpha=1.0, *, key):
+        kb,ka,kbb=jax.random.split(key,3)
+        self.linear=Linear(in_features,out_features,key=kb)
+        self.lora_A=jax.random.normal(ka,(in_features,rank))*0.01
+        self.lora_B=jax.random.normal(kbb,(rank,out_features))*0.01
+        self.scaling=alpha/rank
+    def __call__(self, x):
+        return self.linear(x)+(x@self.lora_A@self.lora_B)*self.scaling
+""")))
+
+holes.append(("lora_pure", probe(
+    "lora_pure", "scaling ignored (alpha has no effect)", _LIN + """
+import jax, jax.numpy as jnp
+class LoRALinear:
+    def __init__(self, in_features, out_features, rank, alpha=1.0, *, key):
+        kb,ka=jax.random.split(key,2)
+        self.linear=Linear(in_features,out_features,key=kb)
+        self.lora_A=jax.random.normal(ka,(in_features,rank))*0.01
+        self.lora_B=jnp.zeros((rank,out_features))
+        self.scaling=alpha/rank
+    def __call__(self, x):
+        return self.linear(x)+(x@self.lora_A@self.lora_B)
+""")))
+
 print(f"\n{BOLD}{'='*60}{RESET}")
 real_holes = [t for t, ok in holes if ok is True]
 if real_holes:

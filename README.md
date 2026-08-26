@@ -181,7 +181,7 @@ reporting a diff.
 ## 📚 Problems
 
 <!-- PROBLEMS:START -->
-**69 problems** — 🟢 16 Easy · 🟡 28 Medium · 🔴 25 Hard
+**73 problems** — 🟢 17 Easy · 🟡 29 Medium · 🔴 27 Hard
 
 
 ### JAX Fundamentals (11)
@@ -200,7 +200,7 @@ reporting a diff.
 | b_10 | [Gradient Checkpointing with jax.checkpoint](templates/b_10_remat_checkpoint.ipynb) | 🟡 Medium | `remat_checkpoint` |
 | b_11 | [Data-Parallel Mean with shard_map](templates/b_11_sharding_basics.ipynb) | 🔴 Hard | `sharding_basics` |
 
-### Core Ops & Layers (17)
+### Core Ops & Layers (18)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -221,8 +221,9 @@ reporting a diff.
 | b_23 | [Linear Layer without Flax](templates/b_23_linear_pure.ipynb) | 🟢 Easy | `linear_pure` |
 | b_24 | [Embedding without Flax](templates/b_24_embedding_pure.ipynb) | 🟢 Easy | `embedding_pure` |
 | b_25 | [Dropout without Flax](templates/b_25_dropout_pure.ipynb) | 🟢 Easy | `dropout_pure` |
+| b_29 | [SwiGLU MLP without Flax](templates/b_29_mlp_pure.ipynb) | 🟢 Easy | `mlp_pure` |
 
-### Attention & Transformers (19)
+### Attention & Transformers (21)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -245,8 +246,10 @@ reporting a diff.
 | b_26 | [Multi-Head Attention without Flax](templates/b_26_mha_pure.ipynb) | 🟡 Medium | `mha_pure` |
 | b_27 | [Cross-Attention without Flax](templates/b_27_cross_attention_pure.ipynb) | 🟡 Medium | `cross_attention_pure` |
 | b_28 | [KV Cache Attention without Flax](templates/b_28_kv_cache_pure.ipynb) | 🔴 Hard | `kv_cache_pure` |
+| b_30 | [Grouped-Query Attention without Flax](templates/b_30_gqa_pure.ipynb) | 🔴 Hard | `gqa_pure` |
+| b_31 | [GPT-2 Block without Flax](templates/b_31_gpt2_block_pure.ipynb) | 🔴 Hard | `gpt2_block_pure` |
 
-### Training (11)
+### Training (12)
 
 | # | Problem | Difficulty | `task_id` |
 |---|---|---|---|
@@ -261,6 +264,7 @@ reporting a diff.
 | b_16 | [Masked Diffusion LM Loss](templates/b_16_masked_diffusion.ipynb) | 🟡 Medium | `masked_diffusion` |
 | b_18 | [Linear Regression with lax.scan](templates/b_18_linear_regression_scan.ipynb) | 🟡 Medium | `linear_regression_scan` |
 | b_19 | [Mini-batch SGD with nested lax.scan](templates/b_19_minibatch_sgd_scan.ipynb) | 🔴 Hard | `minibatch_sgd_scan` |
+| b_32 | [LoRA without Flax](templates/b_32_lora_pure.ipynb) | 🟡 Medium | `lora_pure` |
 
 ### Inference & Decoding (7)
 

@@ -93,6 +93,9 @@ ADDED = {
     # the parameter pytree and the RNG key both become yours to carry.
     "linear_pure", "embedding_pure", "dropout_pure",
     "mha_pure", "cross_attention_pure", "kv_cache_pure",
+    # Second batch of flax-free twins, for problems not yet practised: these
+    # four have the highest interview value of the remaining nnx problems.
+    "mlp_pure", "gqa_pure", "gpt2_block_pure", "lora_pure",
 }
 
 
