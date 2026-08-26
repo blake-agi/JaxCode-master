@@ -320,9 +320,12 @@ _AGE_MAX = 2.0
 # optax. A task whose reference solution reaches for those needs rewriting from
 # scratch before it is practice for that setting, so the overview flags it.
 # Derived from the task definition rather than stored, so it cannot go stale.
+# Match an actual import, not any mention: the flax-free twins TALK about
+# nnx.Linear in their comments ("given to you, exactly as nnx.Linear is") and a
+# bare-name scan flagged all four of them as flax-dependent.
 _ENV_PATTERNS = (
-    ("flax", re.compile(r"\bflax\b|\bnnx\.")),
-    ("optax", re.compile(r"\boptax\b")),
+    ("flax", re.compile(r"^\s*(?:from|import)\s+flax\b", re.M)),
+    ("optax", re.compile(r"^\s*(?:from|import)\s+optax\b", re.M)),
 )
 
 
