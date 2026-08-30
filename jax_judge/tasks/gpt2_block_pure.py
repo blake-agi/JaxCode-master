@@ -290,7 +290,7 @@ assert float(jnp.mean(b(big))) > 50.0, (
 """,
         },
         {
-            "name": "Gradient w.r.t. the input, jit and vmap",
+            "name": "Gradient w.r.t. the input, and jit",
             "code": """
 import jax
 import jax.numpy as jnp
@@ -303,8 +303,6 @@ g = jax.grad(lambda v: jnp.sum(b(v)))(x)
 assert g.shape == x.shape and jnp.isfinite(g).all(), 'bad gradient w.r.t. the input'
 
 assert jnp.allclose(jax.jit(lambda v: b(v))(x), out, atol=1e-5), 'jit disagrees'
-vm = jax.vmap(lambda v: b(v))(x)
-assert jnp.allclose(vm, out, atol=1e-5), 'vmap disagrees — do not name the batch axis'
 """,
         },
     ],

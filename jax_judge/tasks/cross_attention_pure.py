@@ -206,7 +206,7 @@ assert not jnp.allclose(m(xq.at[:, 0].add(5.0), xkv), a, atol=1e-4), (
 """,
         },
         {
-            "name": "Gradient w.r.t. the input, jit and vmap",
+            "name": "Gradient w.r.t. the input, and jit",
             "code": """
 import jax
 import jax.numpy as jnp
@@ -220,11 +220,6 @@ g = jax.grad(lambda v: jnp.sum(m(v, xkv)))(xq)
 assert g.shape == xq.shape and jnp.isfinite(g).all(), 'bad gradient w.r.t. x_q'
 
 assert jnp.allclose(jax.jit(lambda a, b: m(a, b))(xq, xkv), out, atol=1e-5), 'jit disagrees'
-
-vm = jax.vmap(lambda a, b: m(a, b))(xq, xkv)
-assert jnp.allclose(vm, out, atol=1e-5), (
-    'vmap over the batch disagrees — use negative axes so vmap can strip it'
-)
 """,
         },
     ],

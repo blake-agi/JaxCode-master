@@ -255,7 +255,7 @@ assert g.h == 4 and g.kvh == 2 or True  # attributes are free-form
 """,
         },
         {
-            "name": "Gradient w.r.t. the input, jit and vmap",
+            "name": "Gradient w.r.t. the input, and jit",
             "code": """
 import jax
 import jax.numpy as jnp
@@ -268,8 +268,6 @@ grad = jax.grad(lambda v: jnp.sum(g(v)))(x)
 assert grad.shape == x.shape and jnp.isfinite(grad).all(), 'bad gradient w.r.t. the input'
 
 assert jnp.allclose(jax.jit(lambda v: g(v))(x), out, atol=1e-5), 'jit disagrees'
-vm = jax.vmap(lambda v: g(v))(x)
-assert jnp.allclose(vm, out, atol=1e-5), 'vmap disagrees — do not name the batch axis'
 """,
         },
     ],

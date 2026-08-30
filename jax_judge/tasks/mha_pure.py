@@ -81,9 +81,10 @@ o = o.swapaxes(-3, -2)                       # put H next to d_k again
 o = o.reshape(*o.shape[:-2], self.h * self.d_k)   # only NOW may you collapse
 ```
 
-Use negative axes and never name the batch — `vmap` strips the leading axis
-off, so anything that unpacks `B, S, D = Q.shape` breaks the moment someone
-maps over it.
+Naming the batch (`B, S, D = Q.shape`) is fine here — the contract is 3-D and
+the `nnx` original does exactly that. Negative axes (`*t.shape[:-1]`) are worth
+the habit anyway, because they keep the same code working under `vmap`, but
+nothing here requires it.
 
 ### A `Linear` is provided
 The starter cell gives you this, the same way problem 06 gives you
@@ -260,7 +261,7 @@ assert not jnp.allclose(m(kv[:, :3], kv, kv), out, atol=1e-4), 'Q is ignored'
 """,
         },
         {
-            "name": "Gradient w.r.t. the input, jit and vmap",
+            "name": "Gradient w.r.t. the input, and jit",
             "code": """
 import jax
 import jax.numpy as jnp
@@ -274,13 +275,6 @@ g = jax.grad(lambda v: jnp.sum(m(v, v, v)))(x)
 assert g.shape == x.shape and jnp.isfinite(g).all(), 'bad gradient w.r.t. the input'
 
 assert jnp.allclose(jax.jit(lambda v: m(v, v, v))(x), out, atol=1e-5), 'jit disagrees'
-
-vm = jax.vmap(lambda v: m(v, v, v))(x)
-assert vm.shape == (B, S, D), f'{vm.shape}'
-assert jnp.allclose(vm, out, atol=1e-5), (
-    'vmap over the batch disagrees — do not name the batch axis; use negative '
-    'axes so vmap can strip it'
-)
 """,
         },
     ],
